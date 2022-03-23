@@ -27,13 +27,20 @@ int EchoAssignment::serverMain(const char *bind_ip, int port,
   // !IMPORTANT: do not use global variables and do not define/use functions
   // !IMPORTANT: for all system calls, when an error happens, your program must
   // return. e.g., if an read() call return -1, return -1 for serverMain.
+  printf("SERVER HELLO: %s\n", server_hello);
+
 
   const char* hello = "hello";
   const char* whoami = "whoami";
   const char* whoru = "whoru";
 
-  int sock_serv = socket(AF_INET, SOCK_STREAM, 0);
-  struct sockaddr_in servAddr;
+  int sock_serv = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  int sock_client;
+
+  struct sockaddr_in servAddr, clientAddr;
+  socklen_t servAddrSize = sizeof(servAddr);
+  socklen_t clientAddrSize = sizeof(clientAddr);
+
   servAddr.sin_family = AF_INET;
   servAddr.sin_addr.s_addr = inet_addr(bind_ip);
   servAddr.sin_port = htons(port); 
@@ -50,84 +57,87 @@ int EchoAssignment::serverMain(const char *bind_ip, int port,
     return -1;
   }
 
-  char buf[1025];
-
-  int sock_client;
-  struct sockaddr_in clientAddr;
-  socklen_t clientAddrLen = sizeof(clientAddr);
-
   printf("server listening\n");
   while (true){
-    if( (sock_client = accept(sock_serv, (struct sockaddr*)&clientAddr, &clientAddrLen) ) == -1 ){
+    char buf[BUFSIZ];
+
+    // accept client's connect(); servAddr is overwrote with server IP included
+    if( (sock_client = accept(sock_serv, (struct sockaddr*)&servAddr, &servAddrSize) ) < 0 ){
       printf("server accept fail\n");
       close(sock_client);
       close(sock_serv);
       return -1;
     }
 
-    int recvSiz;
-    recvSiz = read(sock_client, buf, sizeof(buf) - 1);
-    if(recvSiz == -1){
+    // get clientAddr with client IP included
+    if (getpeername(sock_client, (struct sockaddr*)&clientAddr, &clientAddrSize) < 0 ){
+      printf("server getpeername fail\n");
+      close(sock_client);
+      close(sock_serv);
+      return -1;
+    }
+
+    // read client's message
+    if(read(sock_client, buf, BUFSIZ) < 0){
       printf("server read fail\n");
       close(sock_client);
       close(sock_serv);
       return -1;
     }
-    
-    buf[recvSiz] = '\0';
+    printf("SERVER RECEIVED: %s\n", buf);
 
-    if( strcmp(buf, hello) == 0){
-      if( write(sock_client, server_hello, sizeof(server_hello)) == -1 ){
-        printf("server write fail(hello)\n");
-        close(sock_client);
-        close(sock_serv);
-        return -1;
-      }
-      submitAnswer(inet_ntoa(clientAddr.sin_addr), buf);
-
-    }else if(strcmp(buf, whoami) == 0){
-      char* ip = inet_ntoa(clientAddr.sin_addr);
-      char responseStr[sizeof(ip) + 1];
-      strcpy(responseStr, ip);
-      responseStr[-1] = '\n';
-      if( write(sock_client, responseStr , sizeof(responseStr)) == -1 ){
-        printf("server write fail(whoami)\n");
-        close(sock_client);
-        close(sock_serv);
-        return -1;
-      }
-      responseStr[-1] = '\0';
-      submitAnswer(inet_ntoa(clientAddr.sin_addr), buf);
-
-    }else if(strcmp(buf, whoru) == 0){
-      char* ip = inet_ntoa(servAddr.sin_addr);
-      char responseStr[sizeof(ip) + 1];
-      strcpy(responseStr, ip);
-      responseStr[-1] = '\n';
-      if( write(sock_client, responseStr , sizeof(responseStr)) == -1 ){
-        printf("server write fail(whoru)\n");
-        close(sock_client);
-        close(sock_serv);
-        return -1;
-      }
-      responseStr[-1] = '\0';
-      submitAnswer(inet_ntoa(clientAddr.sin_addr), buf);
-
-    }else{
-      if( write(sock_client, buf, recvSiz) == -1 ){
-        printf("server write fail(echo)\n");
+    // if "hello" requested, send string stored in server_hello
+    if( strcmp(buf, hello) == 0 ){
+      if( write(sock_client, server_hello, strlen(server_hello)) < 0 ){
+        printf("server write fail (hello)\n");
         close(sock_client);
         close(sock_serv);
         return -1;
       }
       submitAnswer(inet_ntoa(clientAddr.sin_addr), buf);
     }
-    printf("server termination\n");
+    // if "whoami" requested, send client's IP address
+    else if ( strcmp(buf, whoami) == 0 ){
+      char* ip = inet_ntoa(clientAddr.sin_addr);
+      size_t l = strlen(ip);
+      if( write(sock_client, ip, l+1) == -1 ){
+        printf("server write fail (whoami)\n");
+        close(sock_client);
+        close(sock_serv);
+        return -1;
+      }
+      submitAnswer(inet_ntoa(clientAddr.sin_addr), whoami);
+    }
+    // if "whoru" requested, send server's IP address
+    else if (strcmp(buf, whoru) == 0) {
+      char* ip = inet_ntoa(servAddr.sin_addr);
+      size_t l = strlen(ip);
+      if( write(sock_client, ip, l+1) == -1 ){
+        printf("server write fail (whoami)\n");
+        close(sock_client);
+        close(sock_serv);
+        return -1;
+      }
+      submitAnswer(inet_ntoa(clientAddr.sin_addr), whoru);
+    }
+    // for other requests, just serve echo response
+    else {
+      if( write(sock_client, buf, BUFSIZ) == -1 ){
+        printf("server write fail(echo)\n");
+        close(sock_client);
+        close(sock_serv);
+        return -1;
+      }
+      printf("SERVER SENDING: %s\n", buf);
+      submitAnswer(inet_ntoa(clientAddr.sin_addr), buf);
+    }
+
     close(sock_client);
-    close(sock_serv);
-    return 0;
   }
 
+  // close(sock_serv);
+  // printf("server termination\n");
+  // return 0;
 }
 
 int EchoAssignment::clientMain(const char *server_ip, int port,
@@ -142,25 +152,25 @@ int EchoAssignment::clientMain(const char *server_ip, int port,
   servAddr.sin_addr.s_addr = inet_addr(server_ip);
   servAddr.sin_port = htons(port); 
 
-  int sock_client = socket(AF_INET, SOCK_STREAM, 0);
+  int sock_client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   
   if( connect(sock_client, (struct sockaddr*)&servAddr, sizeof(servAddr)) != 0){
     close(sock_client);
     return -1;
   }
 
-  if( write(sock_client, command, sizeof(command)) == -1){
+  printf("CLIENT SENDING: %s\n", command);
+  if( write(sock_client, command, strlen(command)) == -1){
     close(sock_client);
     return -1;
   }
 
-  char buf[1025];
-  int recvSiz;
-  if( (recvSiz = read(sock_client, buf, sizeof(buf) - 1) ) == -1){
+  char buf[BUFSIZ];
+  if( read(sock_client, buf, BUFSIZ) < 0 ){
     close(sock_client);
     return -1;
   }
-  buf[recvSiz] = '\0';
+  printf("CLIENT RECEIVED: %s\n", buf);
   submitAnswer(inet_ntoa(servAddr.sin_addr), buf);
 
   return 0;

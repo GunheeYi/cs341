@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.pc": "jsonc",
+        "*.tcc": "cpp",
+        "fstream": "cpp",
+        "functional": "cpp"
+    }
+}
