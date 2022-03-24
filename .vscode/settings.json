@@ -3,6 +3,7 @@
         "*.pc": "jsonc",
         "*.tcc": "cpp",
         "fstream": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "cstring": "cpp"
     }
 }
