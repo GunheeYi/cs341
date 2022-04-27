@@ -27,14 +27,11 @@ int EchoAssignment::serverMain(const char *bind_ip, int port,
   // !IMPORTANT: do not use global variables and do not define/use functions
   // !IMPORTANT: for all system calls, when an error happens, your program must
   // return. e.g., if an read() call return -1, return -1 for serverMain.
-  //printf("SERVER HELLO: %s\n", server_hello);
 
-
-  const char* hello = "hello";
-  const char* whoami = "whoami";
-  const char* whoru = "whoru";
+  int BUFFER_SIZE = 1024;
 
   int sock_serv = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock_serv < 0) return -1;
   int sock_client;
 
   struct sockaddr_in servAddr, clientAddr;
@@ -45,102 +42,40 @@ int EchoAssignment::serverMain(const char *bind_ip, int port,
   servAddr.sin_addr.s_addr = inet_addr(bind_ip);
   servAddr.sin_port = htons(port); 
 
-  if( bind(sock_serv, (struct sockaddr*)&servAddr, sizeof(servAddr)) != 0 ){
-    //printf("server bind error\n");
-    close(sock_serv);
-    return -1;
-  }
+  if( bind(sock_serv, (struct sockaddr*)&servAddr, sizeof(servAddr)) < 0 ) return -1;
 
-  if( listen(sock_serv, 10) != 0){
-    //printf("server listen error\n");
-    close(sock_serv);
-    return -1;
-  }
+  if( listen(sock_serv, 50) < 0) return -1;
 
-  char buf[BUFSIZ];
   while (true){
+    if( (sock_client = accept(sock_serv, (struct sockaddr*)&servAddr, &servAddrSize) ) < 0 ) return -1;
 
-    // accept client's connect(); servAddr is overwrote with server IP included
-    if( (sock_client = accept(sock_serv, (struct sockaddr*)&servAddr, &servAddrSize) ) < 0 ){
-      //printf("server accept fail\n");
-      close(sock_client);
-      close(sock_serv);
-      return -1;
+    char command[BUFFER_SIZE];
+    memset(command, 0, BUFFER_SIZE);
+
+    if( read(sock_client, command, BUFFER_SIZE) < 0) return -1;
+
+    if (getsockname(sock_client, (sockaddr *)&servAddr, &servAddrSize) < 0 ) return -1;
+    if (getpeername(sock_client, (sockaddr *)&clientAddr, &clientAddrSize) < 0 ) return -1;
+
+    submitAnswer(inet_ntoa(clientAddr.sin_addr), command);
+
+    if( strcmp(command, "hello") == 0 ){
+      if( write(sock_client, server_hello, strlen(server_hello)) < 0 ) return -1;
     }
-
-    // get clientAddr with client IP included
-    if (getpeername(sock_client, (struct sockaddr*)&clientAddr, &clientAddrSize) < 0 ){
-      //printf("server getpeername fail\n");
-      close(sock_client);
-      continue;
+    else if ( strcmp(command, "whoami") == 0){
+      char* clientIP = inet_ntoa(clientAddr.sin_addr);
+      if( write(sock_client, clientIP, strlen(clientIP)) < 0 ) return -1;
     }
-
-    // read client's message
-    int recvLength;
-    while(true){
-      //printf("mallang:receive new message\n");
-      if( (recvLength = read(sock_client, buf, BUFSIZ)) < 0){
-        //printf("server read fail\n");
-        close(sock_client);
-        break;
-      }else if(recvLength == 0){ //tcp connection terminated.
-        close(sock_client);
-        break;
-      }
-      buf[recvLength] = '\0';
-      // printf("SERVER RECEIVED: %s\n", buf);
-
-      // if "hello" requested, send string stored in server_hello
-      if( strncmp(buf, hello, strlen(hello)) == 0 ){
-        if( write(sock_client, server_hello, strlen(server_hello)) < 0 ){
-          //printf("server write fail (hello)\n");
-          close(sock_client);
-          break;
-        }
-        submitAnswer(inet_ntoa(clientAddr.sin_addr), hello);
-      }
-      // if "whoami" requested, send client's IP address
-      else if ( strncmp(buf, whoami, strlen(whoami)) == 0 ){
-        char* ip = inet_ntoa(clientAddr.sin_addr);
-        size_t l = strlen(ip);
-        if( write(sock_client, ip, l+1) == -1 ){
-          //printf("server write fail (whoami)\n");
-          close(sock_client);
-          break;
-        }
-        submitAnswer(inet_ntoa(clientAddr.sin_addr), whoami);
-      }
-      // if "whoru" requested, send server's IP address
-      else if (strncmp(buf, whoru, strlen(whoru)) == 0) {
-        struct sockaddr_in submitAddr;
-        socklen_t submitAddrLen = sizeof(submitAddr);
-        getsockname(sock_client, (sockaddr *)&submitAddr, &submitAddrLen);
-        
-        char* ip = inet_ntoa(submitAddr.sin_addr);
-        size_t l = strlen(ip);
-        if( write(sock_client, ip, l+1) == -1 ){
-          //printf("server write fail (whoami)\n");
-          close(sock_client);
-          break;
-        }
-        submitAnswer(inet_ntoa(clientAddr.sin_addr), whoru);
-      }
-      // for other requests, just serve echo response
-      else {
-        if( write(sock_client, buf, BUFSIZ) == -1 ){
-          //printf("server write fail(echo)\n");
-          close(sock_client);
-          break;
-        }
-        //printf("SERVER SENDING: %s\n", buf);
-        submitAnswer(inet_ntoa(clientAddr.sin_addr), buf);
-      }
-      break;
+    else if (strcmp(command, "whoru") == 0 ) {
+      char* serverIP = inet_ntoa(servAddr.sin_addr);
+      if( write(sock_client, serverIP, strlen(serverIP)) < 0 ) return -1;
     }
+    else {
+      if( write(sock_client, command, BUFFER_SIZE) < 0 ) return -1;
+    }
+    if (close(sock_client) < 0) return -1;
   }
-
-  close(sock_serv);
-  //printf("server termination\n");
+  if (close(sock_serv) < 0) return -1;
   return 0;
 }
 
@@ -150,6 +85,8 @@ int EchoAssignment::clientMain(const char *server_ip, int port,
   // !IMPORTANT: do not use global variables and do not define/use functions
   // !IMPORTANT: for all system calls, when an error happens, your program must
   // return. e.g., if an read() call return -1, return -1 for clientMain.
+
+  int BUFFER_SIZE = 1024;
   
   struct sockaddr_in servAddr;
   servAddr.sin_family = AF_INET;
@@ -157,31 +94,17 @@ int EchoAssignment::clientMain(const char *server_ip, int port,
   servAddr.sin_port = htons(port); 
 
   int sock_client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock_client < 0) return -1;
   
-  if( connect(sock_client, (struct sockaddr*)&servAddr, sizeof(servAddr)) != 0){
-    close(sock_client);
-    return -1;
-  }
+  if( connect(sock_client, (struct sockaddr*)&servAddr, sizeof(servAddr)) < 0) return -1;
 
-  //printf("CLIENT SENDING: %s\n", command);
-  if( write(sock_client, command, strlen(command)) == -1){
-    close(sock_client);
-    return -1;
-  }
+  if( write(sock_client, command, strlen(command)) < 0) return -1;
 
-  char buf[BUFSIZ];
-  int readLength;
-  if( (readLength = read(sock_client, buf, BUFSIZ)) < 0 ){
-    close(sock_client);
-    return -1;
-  }
-  buf[readLength] = '\0';
-  //printf("CLIENT RECEIVED: %s\n", buf);
+  char buf[BUFFER_SIZE];
+  memset(buf, 0, BUFFER_SIZE);
+  if( read(sock_client, buf, BUFFER_SIZE) < 0 ) return -1;
 
-  struct sockaddr_in submitAddr;
-  socklen_t submitAddrLen = sizeof(submitAddr);
-  getpeername(sock_client, (sockaddr *)&submitAddr, &submitAddrLen);
-  submitAnswer(inet_ntoa(submitAddr.sin_addr), buf);
+  submitAnswer(inet_ntoa(servAddr.sin_addr), buf);
 
   return 0;
 }
