@@ -23,7 +23,6 @@
 #define SYN 0b10
 #define ACK 0b10000
 
-
 namespace E {
 
 enum TCPState {
@@ -80,8 +79,7 @@ public:
   virtual ~TCPAssignment();
 
 protected:
-  virtual void systemCallback(UUID syscallUUID, int pid,
-                              const SystemCallParameter &param) final;
+  virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter &param) final;
   virtual void packetArrived(std::string fromModule, Packet &&packet) final;
 
   void syscall_socket(UUID, int, int, int, int);
