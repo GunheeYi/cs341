@@ -136,11 +136,10 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, sockaddr* ad
 };
 
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int capacity) {
-  if (!this->socketMap[pid][fd].binded || this->backlogMap[pid].fd == fd) {
+  if (!this->socketMap[pid][fd].binded) {
     this->returnSystemCall(syscallUUID, -1);
     return;
   }
-  this->backlogMap[pid].fd = fd;
   this->backlogMap[pid].capacity = capacity;
   this->backlogMap[pid].current = 0;
   while ( !this->backlogMap[pid].q.empty() ) this->backlogMap[pid].q.pop();

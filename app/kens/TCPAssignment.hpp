@@ -49,7 +49,6 @@ struct socket {
 };
 
 struct backlog {
-  int fd; // currently listening fd
   int capacity;
   int current;
   std::queue<int> q;
