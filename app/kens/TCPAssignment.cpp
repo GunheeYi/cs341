@@ -15,6 +15,48 @@
 
 namespace E {
 
+ReceiveBuffer::ReceiveBuffer() {
+  buffer = (char*)malloc(TWOMEGA);
+  readStart = 0;
+  readEnd = 0;
+}
+
+unsigned int ReceiveBuffer::addPacket(char* source, size_t len, unsigned int seq){
+  if(readEnd == seq){
+    //수신 완료된 영역 바로 다음 위치의 패킷 수신.
+    if( (TWOMEGA - readEnd) < len ) {
+      //버퍼 wrap.
+      memcpy(buffer + readEnd, source, TWOMEGA - readEnd);
+      memcpy(buffer, source, len - (TWOMEGA - readEnd) );
+      readEnd = len - (TWOMEGA - readEnd);
+      lastOffset += TWOMEGA;
+
+    }else{
+      memcpy(buffer + readEnd, source, len);
+      readEnd += len;
+    }
+
+    if(readEnd == (*blockList.begin()).bufPos ){
+      //DataBlock 하나를 편입한다.
+      readEnd += (*blockList.begin()).len;
+      blockList.erase(blockList.begin());
+    }
+  }else{
+    //이상한 위치의 패킷을 수신한 경우.
+    for(std::vector<DataBlock>::iterator iter = blockList.begin(); iter != blockList.end(); iter++){
+      int seqDisplacement = seq - (*iter).seq;
+      if( seqDisplacement < 0 ){ //딱 들어가야 할 위치를 지나친 직후.
+        DataBlock newDataBlock;
+
+
+        blockList.insert(iter, )
+      }
+    }
+
+  }
+}
+
+
 TCPAssignment::TCPAssignment(Host &host)
     : HostModule("TCP", host), RoutingInfoInterface(host),
       SystemCallInterface(AF_INET, IPPROTO_TCP, host),

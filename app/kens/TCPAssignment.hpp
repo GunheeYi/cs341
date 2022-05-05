@@ -22,6 +22,7 @@
 
 #define SYN 0b10
 #define ACK 0b10000
+#define TWOMEGA 2097152
 
 namespace E {
 
@@ -95,6 +96,24 @@ protected:
   std::map<int, std::map<int, socket>> socketMap;
   std::map<int, backlog> backlogMap; // waiting queue는 pid 당 하나만 있으면 됨
 
+};
+
+class DataBlock{
+public:
+  unsigned int seq, bufPos;
+  unsigned int len;
+};
+
+class ReceiveBuffer{
+  std::vector<DataBlock> blockList;
+  char* buffer;
+public:
+  unsigned int lastOffset;
+  size_t readStart;
+  size_t readEnd;
+
+  ReceiveBuffer();
+  unsigned int addPacket(char* source, size_t len, unsigned int seq);
 };
 
 class TCPAssignmentProvider {
