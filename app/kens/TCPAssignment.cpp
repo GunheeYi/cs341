@@ -295,12 +295,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   uint32_t ipSrc, ipDst;
   uint16_t portSrc, portDst;
   uint8_t seqBuf[4], ackBuf[4];
-  uint32_t seq, ack, seqN;
+  uint32_t seq, ack;
   uint8_t headLen, flags;
   uint16_t window, checksum, urgent;
   size_t payloadLen;
 
   int randSeq = rand();
+
+  uint32_t newSeq, newAck, newSeqN, newAckN;
   uint8_t newHeadLen, newFlags;
   uint16_t newWindow, newChecksum, newUrgent;
 
@@ -371,22 +373,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       newSocket->remoteAddr.sin_port = portSrc;
       newSocket->state = TCP_SYN_RCVD;
 
-      // seqBuf[3] = seqBuf[3] + 1;
-      seq += 1;
-      seqN = htonl(seq);
+      newSeq = seq + 1;
+      newAck = rand();
       newHeadLen = 5 << 4;
       newFlags = SYN | ACK;
       newWindow = 51200;
       newChecksum = 0;
       newUrgent = 0;
+
+      newSeqN = htonl(newSeq);
+      newAckN = htonl(newAck);
       p.writeData(IP_START+12, &ipDst, 4);
       p.writeData(IP_START+16, &ipSrc, 4);
       p.writeData(TCP_START+0, &portDst, 2);
       p.writeData(TCP_START+2, &portSrc, 2);
-      p.writeData(TCP_START+4, &randSeq, 4);
-      // p.writeData(TCP_START+8, &seqBuf, 4);
-      p.writeData(TCP_START+8, &seqN, 4);
-      p.writeData(TCP_START+12, &headLen, 1);
+      p.writeData(TCP_START+4, &newAckN, 4);
+      p.writeData(TCP_START+8, &newSeqN, 4);
+      p.writeData(TCP_START+12, &newHeadLen, 1);
       p.writeData(TCP_START+13, &newFlags, 1);
       p.writeData(TCP_START+14, &newWindow, 2);
       p.writeData(TCP_START+16, &newChecksum, 2);
@@ -420,7 +423,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       // seqBuf[3] = seqBuf[3] + 1;
       seq += 1;
-      seqN = htonl(seq);
+      uint32_t seqN = htonl(seq);
       newHeadLen = 5 << 4;
       newFlags = ACK;
       newWindow = 51200;
