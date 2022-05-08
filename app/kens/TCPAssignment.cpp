@@ -374,7 +374,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 	// if(targetChannel != nullptr){
 	// 	this->targetChannel->TestPrint();
 	// }else{
-	// 	printf("target channel null\n");
+	// 	//printf("target channel null\n");
 	// }
 	if (state == WindowState::EMPTY) {
 		state = WindowState::RECEIVING;
@@ -385,7 +385,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		}
 	} 
 	else if (state == WindowState::CONGESTED) {
-		printf("------ congested ------\n");
+		//printf("------ congested ------\n");
 		return -1;
 	}
 
@@ -407,7 +407,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		}
 		else if (currentUB->headSeq == seq) {
 			// mallang TEST
-			//printf("================= dup packet\n");
+			////printf("================= dup packet\n");
 			// mallang TEST
 			return 0; //dup packet.
 		}
@@ -420,19 +420,19 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 	//검색 결과 확인.
 	if (currentUB == nullptr && prevUB == nullptr) {
 		// mallang TEST
-		//printf("================= 1\n");
+		////printf("================= 1\n");
 		// mallang TEST
 		//window에 unsequenced 블록이 없는 경우.
 
 		if (int(lastSeq - seq) > 0) {
-			printf("error num: %d", int(lastSeq - seq));
+			//printf("error num: %d", int(lastSeq - seq));
 			throw std::runtime_error("weird packet detected");
 		}
 
 		//그 중에서도, loss 없이 바로 뒤에 붙은 경우.
 		if (seq == lastSeq) { //지금 받은 패킷이 unsequenced가 아닌 경우.
 			// mallang TEST
-			//printf("================= 11\n");
+			////printf("================= 11\n");
 			// mallang TEST
 
 			//이 패킷을 받으면 버퍼가 초과되기 때문에, 더 받을 수 없는 경우(종료). 
@@ -453,7 +453,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			}
 
 			// mallang TEST
-			//printf("================= 112\n");
+			////printf("================= 112\n");
 			// mallang TEST
 			//패킷에서 저장할 데이터가 현재 링크의 여백보다 큰 경우( 새 링크 생성 필요 )
 			//패킷의 크기는 *절대* 링크 1개를 초과하지 않으므로, 2번 이 작업을 수행할 경우는 X.
@@ -494,7 +494,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		}
 		else {
 			// mallang TEST
-			printf("================= 12\n");
+			//printf("================= 12\n");
 			// mallang TEST
 			//loss 가 발견된 경우
 			unsigned int overshoot_distance = seq + length - lastSeq; //버퍼 직후 빈 주소에서부터 지금 unsequenced된 데이터의 가장 마지막 바이트까지의 길이.
@@ -553,7 +553,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			//패킷 데이터 저장.
 			if ((int)(seq - (lastSeq + emptyLength)) < 0) {
 				// mallang TEST
-				printf("================= 121\n");
+				//printf("================= 121\n");
 				// mallang TEST
 				//targetLink에 걸쳐 있는 경우.
 				int packet_a_part = lastSeq + emptyLength - seq;
@@ -569,7 +569,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			}
 			else {
 				// mallang TEST
-				printf("================= 122\n");
+				//printf("================= 122\n");
 				// mallang TEST
 				WriteToWindow(window_head, lastSeq + emptyLength, seq, data, length);
 			}
@@ -578,7 +578,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 	}
 	else if(currentUB == nullptr) {
 		// mallang TEST
-		printf("================= 2\n");
+		//printf("================= 2\n");
 		// mallang TEST
 		//현재 패킷이 윈도우의 가장 큰 seq 너머에 있는 경우
 		//마지막 UB에 붙어 있을 수도, 아니면 그마저도 떨어져 있을 수도 있음.
@@ -620,7 +620,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 	}
 	else {
 		// mallang TEST
-		printf("================= 3\n");
+		//printf("================= 3\n");
 		// mallang TEST
 		// 두 UB 사이에 패킷이 들어가는 경우, 혹은 버퍼 끝과 윈도우 사이에 패킷 들어오는 경우.
 		if ((int)(lastSeq - seq) > 0) throw std::runtime_error("weird packet detected");
@@ -628,11 +628,11 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		//버퍼 뒤에 바로 붙은 경우.
 		if (seq == lastSeq) {
 			// mallang TEST
-			printf("================= 31\n");
+			//printf("================= 31\n");
 			// mallang TEST
 			if (length <= emptyLength) {
 				// mallang TEST
-				printf("================= 32\n");
+				//printf("================= 32\n");
 				// mallang TEST
 				//먼저, 새 패킷이 targetLink를 넘지 않는 경우. 바로 데이터 집어넣기.
 				memcpy(targetLink->linkStorage + targetLink->usedLength,
@@ -643,7 +643,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			}
 			else {
 				// mallang TEST
-				printf("================= 33\n");
+				//printf("================= 33\n");
 				// mallang TEST
 				//새 패킷이 targetLink를 넘는 경우
 				memcpy(targetLink->linkStorage + targetLink->usedLength,
@@ -676,7 +676,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			//여기서, 이 패킷의 끝이 바로 UB_head로 이어지는 경우.
 			if ((int)(seq + length - UB_head->headSeq) >= 0) {
 				// mallang TEST
-				printf("================= 34\n");
+				//printf("================= 34\n");
 				// mallang TEST
 				int thisUBlength = UB_head->tailSeq - UB_head->headSeq;
 				if (thisUBlength <= LinkSize - targetLink->usedLength) {
@@ -757,7 +757,7 @@ void PacketWindow::InspectWindow() {
 
 		std::cout << "---->| ";
 		for (int i = 0; i < LinkSize; i++) {
-			printf("%c", currentLink->linkStorage[i]);
+			//printf("%c", currentLink->linkStorage[i]);
 		}
 		std::cout << "|" << std::endl;
 
@@ -794,6 +794,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       syscallUUID, pid, 
       std::get<int>(param.params[0]), std::get<int>(param.params[1]), std::get<int>(param.params[2])
     );
+    //printf("syscall: socket\n");
     break;
   case BIND:
     this->syscall_bind(
@@ -801,6 +802,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
       (socklen_t)std::get<int>(param.params[2])
     );
+    //printf("syscall: bind\n");
     break;
   case LISTEN:
     this->syscall_listen(
@@ -808,6 +810,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       std::get<int>(param.params[0]),
       std::get<int>(param.params[1])
     );
+    //printf("syscall: listen\n");
     break;
   case ACCEPT:
     this->syscall_accept(
@@ -815,6 +818,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
       static_cast<socklen_t *>(std::get<void *>(param.params[2]))
     );
+    //printf("syscall: accept\n");
     break;
   case CONNECT:
     this->syscall_connect(
@@ -822,19 +826,23 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
       (socklen_t)std::get<int>(param.params[2])
     );
+    //printf("syscall: connect\n");
     break;
   case READ:
     this->syscall_read(syscallUUID, pid, std::get<int>(param.params[0]),
                        (char*)std::get<void *>(param.params[1]),
                        std::get<int>(param.params[2]));
+    //printf("syscall: read\n");
     break;
   case WRITE:
     this->syscall_write(syscallUUID, pid, std::get<int>(param.params[0]),
                         (char*)std::get<void *>(param.params[1]),
                         std::get<int>(param.params[2]));
+    //printf("syscall: write\n");
     break;
   case CLOSE:
     this->syscall_close(syscallUUID, pid, std::get<int>(param.params[0]));
+    //printf("syscall: close\n");
     break;
   case GETSOCKNAME:
     this->syscall_getsockname(
@@ -945,8 +953,8 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   std::optional<ipv4_t> ipSrc = this->getIPAddr(portSrc);
 
   // TODO: 이미 bind된 소켓 중에 ip/port 겹치는 것 있는지 확인 필요?
-  assert(this->socketMap.find(pid) != this->socketMap.end());
-  assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
+  //assert(this->socketMap.find(pid) != this->socketMap.end());
+  //assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
   if (!this->socketMap[pid][fd].binded) {
     this->socketMap[pid][fd].localAddr.sin_family = AF_INET;
     this->socketMap[pid][fd].localAddr.sin_addr.s_addr = (uint32_t) NetworkUtil::arrayToUINT64(*ipSrc);
@@ -998,7 +1006,9 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
   tp->from = CONNECT;
   tp->syscallUUID = syscallUUID;
-  this->socketMap[pid][fd].timerUUID = this->addTimer(tp, 1000000000);
+  tp->connect_addr = addrPtr;
+  tp->connect_addrLen = addrLen;
+  this->socketMap[pid][fd].timerUUID = this->addTimer(tp, 100000000000U);
   this->socketMap[pid][fd].syscallUUID = syscallUUID;
 
 };
@@ -1010,10 +1020,10 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, char* dst, i
 
   int returnVal = this->socketMap[pid][fd].rcvBuffer.popData(dst, size);
   if(returnVal != 0){
-	  //printf("read %d bytes\n", returnVal);
+	  ////printf("read %d bytes\n", returnVal);
   	this->returnSystemCall(syscallUUID, returnVal);
   }else{
-	  //printf("read hanging\n");
+	  ////printf("read hanging\n");
 	timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
 	tp->from = READ;
 	tp->syscallUUID = syscallUUID;
@@ -1152,6 +1162,24 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   packet.readData(TCP_START+14, &window, 2);
   packet.readData(TCP_START+16, &checksum, 2);
   packet.readData(TCP_START+18, &urgent, 2);
+
+  uint16_t templength = ntohs(packetLength);
+  uint8_t tempbuf[TCP_START + templength];
+  packet.readData(0, tempbuf, TCP_START + templength);
+  tempbuf[TCP_START + 16] = 0;
+  tempbuf[TCP_START + 17] = 0;
+
+  uint16_t calculatedChecksum;
+  calculatedChecksum = NetworkUtil::tcp_sum(
+    *(uint32_t *)&tempbuf[IP_START+12], *(uint32_t *)&tempbuf[IP_START+16],
+    &tempbuf[TCP_START], templength - 20
+  );
+  calculatedChecksum = ~calculatedChecksum;
+  if(calculatedChecksum != ntohs(checksum)){
+    return;
+  }
+
+  //checksum 확인 완료
 
   Packet p(HANDSHAKE_PACKET_SIZE);
 
@@ -1294,11 +1322,11 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
             packet.readData(TCP_START+20, rcvBuf, htons(packetLength) - 40);
 
             if(this->socketMap[pid][fd].rcvWindow == nullptr){
-              printf("window not exist\n");
+              //printf("window not exist\n");
               this->socketMap[pid][fd].rcvWindow = 
                 new PacketWindow(&(this->socketMap[pid][fd].rcvBuffer), ntohl(*((unsigned int*)seqBuf)));
             }
-            //printf("window packet received\n");
+            ////printf("window packet received\n");
               //std::cout << "received seq: " << (unsigned int)(ntohl(*((int*)seqBuf))) << std::endl;
               //std::cout << "received length: " << htons(packetLength) - 40 << std::endl;
             this->socketMap[pid][fd].rcvWindow->ReceivePacket(rcvBuf, (unsigned int)(ntohl(*((int*)seqBuf))), htons(packetLength) - 40);
@@ -1356,7 +1384,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
             itFd->second.remoteAddr.sin_addr.s_addr == ipSrc &&
             itFd->second.remoteAddr.sin_port == portSrc
           ) {
-            printf("server received ack\n");
+            //printf("server received ack\n");
             pid = itPid->first;
             fd = itFd->first;
             break;
@@ -1413,10 +1441,11 @@ void TCPAssignment::timerCallback(std::any payload) {
       this->syscall_accept(tp->syscallUUID, tp->pid, tp->fd, tp->addrPtr, tp->addrLenPtr);
       break;
     case CONNECT:
-      this->returnSystemCall(tp->syscallUUID, -1);
+      //this->returnSystemCall(tp->syscallUUID, -1);
+      this->syscall_connect(tp->syscallUUID, tp->pid, tp->fd, tp->connect_addr, tp->connect_addrLen);
       break;
     case CLOSE:
-      // printf("timerCallback: CLOSE\n");
+      // //printf("timerCallback: CLOSE\n");
       // this->syscall_close(tp->syscallUUID, tp->pid, tp->fd);
       break;
     case READ:
