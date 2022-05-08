@@ -918,7 +918,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
     tp->fd = fd;
     tp->addrPtr = addrPtr;
     tp->addrLenPtr = addrLenPtr;
-    this->addTimer(tp, 1000000000);
+    this->addTimer(tp, 100000000U);
     return;
   }
 
@@ -1017,11 +1017,15 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, char* dst, i
 	timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
 	tp->from = READ;
 	tp->syscallUUID = syscallUUID;
-	this->socketMap[pid][fd].timerUUID = this->addTimer(tp, 1000000000);
-	this->socketMap[pid][fd].syscallUUID = syscallUUID;
-	this->socketMap[pid][fd].read_dst = dst;
-	this->socketMap[pid][fd].read_size = size;
-	this->socketMap[pid][fd].readHanging = true;
+  tp->pid = pid;
+  tp->fd = fd;
+  tp->read_dst = dst;
+  tp->read_size = size;
+	this->socketMap[pid][fd].timerUUID = this->addTimer(tp, 100000000U);
+	// this->socketMap[pid][fd].syscallUUID = syscallUUID;
+	// this->socketMap[pid][fd].read_dst = dst;
+	// this->socketMap[pid][fd].read_size = size;
+	// this->socketMap[pid][fd].readHanging = true;
   }
 };
 
@@ -1250,7 +1254,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       p.writeData(IP_START+16, &ipSrc, 4);
       p.writeData(TCP_START+0, &portDst, 2);
       p.writeData(TCP_START+2, &portSrc, 2);
-      p.writeData(TCP_START+4, &randSeq, 4);
+      p.writeData(TCP_START+4, &seqRes, 4);
       p.writeData(TCP_START+8, &ackRes, 4);
       p.writeData(TCP_START+12, &headLen, 1);
       p.writeData(TCP_START+13, &newFlags, 1);
@@ -1277,7 +1281,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
           if(itFd->second.state == TCP_ESTABLISHED && //과제 3
-            //printf("packet received on established socket\n");
             itFd->second.remoteAddr.sin_addr.s_addr == ipSrc &&
             itFd->second.remoteAddr.sin_port == portSrc){
             pid = itPid->first;
@@ -1341,11 +1344,11 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
               this->sendPacket("IPv4", std::move(response));
               
-            if(this->socketMap[pid][fd].readHanging){
-              this->socketMap[pid][fd].readHanging = false;
-              int returnVal = this->socketMap[pid][fd].rcvBuffer.popData(this->socketMap[pid][fd].read_dst, this->socketMap[pid][fd].read_size);
-              this->returnSystemCall(this->socketMap[pid][fd].syscallUUID, returnVal);
-            }
+            // if(this->socketMap[pid][fd].readHanging){
+            //   this->socketMap[pid][fd].readHanging = false;
+            //   int returnVal = this->socketMap[pid][fd].rcvBuffer.popData(this->socketMap[pid][fd].read_dst, this->socketMap[pid][fd].read_size);
+            //   this->returnSystemCall(this->socketMap[pid][fd].syscallUUID, returnVal);
+            // }
             return;
           }
           else if ( //원래 있던 case.
@@ -1415,6 +1418,9 @@ void TCPAssignment::timerCallback(std::any payload) {
     case CLOSE:
       // printf("timerCallback: CLOSE\n");
       // this->syscall_close(tp->syscallUUID, tp->pid, tp->fd);
+      break;
+    case READ:
+      this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_dst, tp->read_size);
       break;
     default:
       break;

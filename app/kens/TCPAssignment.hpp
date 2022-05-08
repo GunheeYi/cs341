@@ -143,11 +143,7 @@ struct socket {
   uint32_t localseq; //내가 보낼 첫 바이트
   uint32_t remoteseq; //상대가 보낼 첫 바이트
 
-  //read의 반환에 사용.
-  bool readHanging;
-  char* read_dst;
-  int read_size;
-
+ 
   //accept의 반환에 사용.
   // sockaddr* addrPtr;
   // socklen_t* addrLenPtr;
@@ -164,9 +160,14 @@ struct timerPayload {
   int syscallUUID;
   int pid;
   int fd;
+  //accept의 반환에 사용.
   sockaddr* addrPtr;
   socklen_t* addrLenPtr;
-  socklen_t addrLen;
+  socklen_t addrLen; 
+  
+  //read의 반환에 사용.
+  char* read_dst;
+  int read_size;
 };
 
 class TCPAssignment : public HostModule,
