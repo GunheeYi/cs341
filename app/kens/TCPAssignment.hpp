@@ -42,6 +42,11 @@ enum TCPState {
   TCP_TIME_WAIT
 };
 
+struct readBufMarker {
+  size_t start;
+  size_t end;
+};
+
 struct socket {
   TCPState state;
   sockaddr_in localAddr;
@@ -50,11 +55,13 @@ struct socket {
   UUID timerUUID;
   int syscallUUID;
 
-  void* readBuf;
-  void* writeBuf;
-  uint32_t readStart;
-  uint32_t readEnd;
-  uint32_t offset; // (starting sequence number)
+  char* readBuf;
+  char* writeBuf;
+  size_t readStart;
+  size_t readEnd;
+  size_t readBufOffset; // (starting sequence number)
+  bool readBufOffsetSet;
+  std::list<readBufMarker> readBufMarkers;
 };
 
 struct backlog { // 용어 개선 가능하다

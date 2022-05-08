@@ -105,10 +105,11 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   struct socket s;
   s.state = TCP_CLOSED;
   s.binded = false;
-  s.readBuf = malloc(READ_BUFFER_SIZE);
-  s.writeBuf = malloc(WRITE_BUFFER_SIZE);
+  s.readBuf = (char*) malloc(READ_BUFFER_SIZE);
+  s.writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
   s.readStart = 0;
   s.readEnd = 0;
+  s.readBufOffsetSet = false;
   
   this->socketMap[pid].insert(std::pair<int, socket>(fd, s));
   this->returnSystemCall(syscallUUID, fd);
@@ -479,10 +480,67 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         return;
 
       } else { // payload를 담고 있는 data 패킷임
+        if (!socket->readBufOffsetSet) {
+          socket->readBufOffset = seq;
+          socket->readBufOffsetSet = true;
+        }
 
+        // relative sequence number
+        size_t seqRel = seq - socket->readBufOffset;
+        size_t seqRel_ = seqRel % READ_BUFFER_SIZE; // _가 붙은 변수는 mod READ_BUFFER_SIZE 연산이 되었음을 의미
+
+        // read buffer overflow
+        if (
+          seqRel < socket->readStart ||
+          seqRel + payloadLen > socket->readStart + READ_BUFFER_SIZE) {
+          // TODO: 이전 유효 ack number 다시 보내줘야 하나?
+          return;
+        }
+
+        size_t PAYLOAD_START = TCP_START + headLen;
+
+        // payload를 read buffer에 쓰기
+        if (seqRel_ + payloadLen > READ_BUFFER_SIZE) { // write should be wrapped
+          size_t len1 = READ_BUFFER_SIZE - seqRel_;
+          size_t len2 = payloadLen - len1;
+          packet.readData(PAYLOAD_START, socket->readBuf + seqRel_, len1);
+          packet.readData(PAYLOAD_START + len1, socket->readBuf, len2);
+        } else { // write is simple
+          packet.readData(PAYLOAD_START, socket->readBuf + seqRel_, payloadLen);
+        }
+
+        readBufMarker marker;
+        marker.start = seqRel;
+        marker.end = seqRel + payloadLen;
+
+        // 일단 벡터에 새 마커를 순서 맞게 넣어
+        // 그리고 readEnd 확장할 수 있는데까지 확장하고 처리된 마커들 vector에서 pop해
+
+        // 일단 벡터에 새 마커를 순서 맞게 넣어
+        std::list<readBufMarker>::iterator itMarker;
+        for (itMarker = socket->readBufMarkers.begin(); itMarker != socket->readBufMarkers.end(); itMarker++) {
+          if (
+            itMarker->start <= marker.start && 
+            (
+              std::next(itMarker) == socket->readBufMarkers.end() ||
+              std::next(itMarker)->start >= marker.start
+            )
+          ) break;
+        }
+        socket->readBufMarkers.insert(std::next(itMarker), marker);
+
+        // 그리고 readEnd 확장할 수 있는데까지 확장하고 처리된 마커들 vector에서 pop해
+        for (itMarker = socket->readBufMarkers.begin(); itMarker != socket->readBufMarkers.end(); ) {
+          std::list<readBufMarker>::iterator itMarkerNext = std::next(itMarker);
+          if (itMarker->start <= socket->readEnd) {
+            socket->readEnd = itMarker->end;
+            socket->readBufMarkers.erase(itMarker);
+          } else break;
+          itMarker = itMarkerNext;
+        }
+
+        return;
       }
-
-      return;
     }
     default:
     {
