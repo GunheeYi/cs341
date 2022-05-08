@@ -105,6 +105,11 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   struct socket s;
   s.state = TCP_CLOSED;
   s.binded = false;
+  s.readBuf = malloc(READ_BUFFER_SIZE);
+  s.writeBuf = malloc(WRITE_BUFFER_SIZE);
+  s.readStart = 0;
+  s.readEnd = 0;
+  
   this->socketMap[pid].insert(std::pair<int, socket>(fd, s));
   this->returnSystemCall(syscallUUID, fd);
 };
@@ -250,8 +255,14 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, char*, int 
 };
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
-  this->socketMap[pid].erase(fd);
+  
+  free(this->socketMap[pid][fd].readBuf);
+  free(this->socketMap[pid][fd].writeBuf);
+
+  // this->socketMap[pid][fd].state = TCP_CLOSED;
   this->removeFileDescriptor(pid, fd);
+  this->socketMap[pid].erase(fd);
+
   this->returnSystemCall(syscallUUID, 0);
 };
 
@@ -282,10 +293,11 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, socka
 void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   uint32_t ipSrc, ipDst;
   uint16_t portSrc, portDst;
-  uint8_t seqBuf[4];
-  uint8_t ackBuf[4];
+  uint8_t seqBuf[4], ackBuf[4];
+  uint32_t seq, ack, seqN;
   uint8_t headLen, flags;
   uint16_t window, checksum, urgent;
+  size_t payloadLen;
 
   int randSeq = rand();
   uint8_t newHeadLen, newFlags;
@@ -303,6 +315,19 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   packet.readData(TCP_START+16, &checksum, 2);
   packet.readData(TCP_START+18, &urgent, 2);
 
+  seq = ntohl( *(uint32_t *)seqBuf );
+  ack = ntohl( *(uint32_t *)ackBuf );
+
+  headLen = (headLen & 0xf0) >> 2;
+
+  payloadLen = packet.getSize() - (TCP_START + headLen);
+
+  // std::cout << "seq: " << unsigned(seqBuf[0]) << " " << unsigned(seqBuf[1]) << " " << unsigned(seqBuf[2]) << " " << unsigned(seqBuf[3]) << "++++++++++++++++++++++++++++++++=" << std::endl;
+  // std::cout << "seq: " << seq << std::endl;
+  // std::cout << "headlen: " << unsigned(headLen) << "++++++++++++++++++++++++++++++++=" << std::endl;
+  // // print packet size
+  // std::cout << "payload size: " << unsigned(payloadLen) << std::endl;
+
   Packet p(HANDSHAKE_PACKET_SIZE);
 
   switch(flags) {
@@ -310,7 +335,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     { 
       // packet에 dstIp, dstPort로 listening socket을 찾아
       // 새로운 socket 생성, 거기에 listening socket의 localAddr를 복사
-      // packet의 srcIp, srcPort를 listening socket의 remoteAddr로 복사
+      // packet의 srcIp, srcPort를 새로운 socket의 remoteAddr로 복사
       int pid = -1, listeningfd = -1;
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
@@ -344,7 +369,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       this->socketMap[pid][newfd].remoteAddr.sin_port = portSrc;
       this->socketMap[pid][newfd].state = TCP_SYN_RCVD;
 
-      seqBuf[3] = seqBuf[3] + 1;
+      // seqBuf[3] = seqBuf[3] + 1;
+      seq += 1;
+      seqN = htonl(seq);
       newHeadLen = 5 << 4;
       newFlags = SYN | ACK;
       newWindow = 51200;
@@ -355,7 +382,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       p.writeData(TCP_START+0, &portDst, 2);
       p.writeData(TCP_START+2, &portSrc, 2);
       p.writeData(TCP_START+4, &randSeq, 4);
-      p.writeData(TCP_START+8, &seqBuf, 4);
+      // p.writeData(TCP_START+8, &seqBuf, 4);
+      p.writeData(TCP_START+8, &seqN, 4);
       p.writeData(TCP_START+12, &headLen, 1);
       p.writeData(TCP_START+13, &newFlags, 1);
       p.writeData(TCP_START+14, &newWindow, 2);
@@ -387,7 +415,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       this->socketMap[pid][fd].state = TCP_ESTABLISHED;
 
-      seqBuf[3] = seqBuf[3] + 1;
+      // seqBuf[3] = seqBuf[3] + 1;
+      seq += 1;
+      seqN = htonl(seq);
       newHeadLen = 5 << 4;
       newFlags = ACK;
       newWindow = 51200;
@@ -398,7 +428,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       p.writeData(TCP_START+0, &portDst, 2);
       p.writeData(TCP_START+2, &portSrc, 2);
       p.writeData(TCP_START+4, &randSeq, 4);
-      p.writeData(TCP_START+8, &seqBuf, 4);
+      // p.writeData(TCP_START+8, &seqBuf, 4);
+      p.writeData(TCP_START+8, &seqN, 4);
       p.writeData(TCP_START+12, &headLen, 1);
       p.writeData(TCP_START+13, &newFlags, 1);
       p.writeData(TCP_START+14, &newWindow, 2);
@@ -413,7 +444,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     case ACK:
     {
       // 대응되는 socket에 이미 remoteAddr가 적혀있어
-      // 그걸로 찾아 socket을, 그리고 accpet될 수 있도록 q에 넣어줘
+      // 그걸로 찾아 socket을
       int pid, fd = -1;
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
@@ -430,14 +461,21 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       if (pid == -1 || fd == -1) return;
 
-      this->backlogMap[pid].current--;
-      this->backlogMap[pid].q.push(fd);
+      if (payloadLen == 0) { // handshaking 패킷임
+        // 그리고 accpet될 수 있도록 q에 넣어줘
+        this->backlogMap[pid].current--;
+        this->backlogMap[pid].q.push(fd);
 
-      this->socketMap[pid][fd].state = TCP_ESTABLISHED;
+        this->socketMap[pid][fd].state = TCP_ESTABLISHED;
 
-      if (this->socketMap[pid][fd].syscallUUID) {
-        this->cancelTimer(this->socketMap[pid][fd].timerUUID);
-        this->returnSystemCall(this->socketMap[pid][fd].syscallUUID, 0);
+        if (this->socketMap[pid][fd].syscallUUID) {
+          this->cancelTimer(this->socketMap[pid][fd].timerUUID);
+          this->returnSystemCall(this->socketMap[pid][fd].syscallUUID, 0);
+        }
+        return;
+
+      } else { // payload를 담고 있는 data 패킷임
+        
       }
 
       return;

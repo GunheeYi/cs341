@@ -19,6 +19,9 @@
 #define IP_START 14
 #define TCP_START 34
 #define HANDSHAKE_PACKET_SIZE 54
+#define TWO_MEGA 2097152
+#define READ_BUFFER_SIZE TWO_MEGA
+#define WRITE_BUFFER_SIZE TWO_MEGA
 
 #define SYN 0b10
 #define ACK 0b10000
@@ -46,9 +49,15 @@ struct socket {
   bool binded;
   UUID timerUUID;
   int syscallUUID;
+
+  void* readBuf;
+  void* writeBuf;
+  uint32_t readStart;
+  uint32_t readEnd;
+  uint32_t offset; // (starting sequence number)
 };
 
-struct backlog {
+struct backlog { // 용어 개선 가능하다
   int capacity;
   int current;
   std::queue<int> q;
