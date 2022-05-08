@@ -26,8 +26,8 @@
 #define FIN 1
 
 namespace E {
-  //여기서부터 새 코드.
-  const int LinkSize = 4096;
+  //여기서부터 과제 3 번 코드
+const int LinkSize = 4096;
 
 class LinkedDataNode
 {
@@ -112,7 +112,9 @@ const int MAX_WINDOW_SIZE = 16; // 4k for each link, 64k in total.
 		PacketWindow(SyncChannel* _target, unsigned int initial_seq);
 		void InspectWindow();
 	};
-//여기까지 새 코드
+
+//여기까지 과제 3 번 코드
+
 
 enum TCPState {
   TCP_CLOSED,
@@ -135,7 +137,7 @@ struct socket {
   bool binded;
   UUID timerUUID;
   int syscallUUID;
-  
+
   //receive buffer
   SyncChannel rcvBuffer;
   PacketWindow* rcvWindow;
@@ -149,14 +151,17 @@ struct socket {
   int read_size;
 
   //accept의 반환에 사용.
-  // sockaddr* addrPtr;
-  // socklen_t* addrLenPtr;
+  sockaddr* addrPtr;
+  socklen_t* addrLenPtr;
 };
 
 struct backlog {
   int capacity;
   int current;
   std::queue<int> q;
+
+  socket* listening_socket;
+  bool accept_hanging;
 };
 
 struct timerPayload {
