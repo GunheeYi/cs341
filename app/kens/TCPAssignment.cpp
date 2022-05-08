@@ -363,11 +363,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       this->backlogMap[pid].current++;
 
       int newfd = this->createFileDescriptor(pid);
-      memcpy(&this->socketMap[pid][newfd].localAddr, &this->socketMap[pid][listeningfd].localAddr, sizeof(sockaddr_in));
-      this->socketMap[pid][newfd].remoteAddr.sin_family = AF_INET;
-      this->socketMap[pid][newfd].remoteAddr.sin_addr.s_addr = ipSrc;
-      this->socketMap[pid][newfd].remoteAddr.sin_port = portSrc;
-      this->socketMap[pid][newfd].state = TCP_SYN_RCVD;
+      socket* newSocket = &this->socketMap[pid][newfd];
+      memcpy(&newSocket->localAddr, &this->socketMap[pid][listeningfd].localAddr, sizeof(sockaddr_in));
+      newSocket->remoteAddr.sin_family = AF_INET;
+      newSocket->remoteAddr.sin_addr.s_addr = ipSrc;
+      newSocket->remoteAddr.sin_port = portSrc;
+      newSocket->state = TCP_SYN_RCVD;
 
       // seqBuf[3] = seqBuf[3] + 1;
       seq += 1;
@@ -413,7 +414,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       if (pid == -1 || fd == -1) return;
 
-      this->socketMap[pid][fd].state = TCP_ESTABLISHED;
+      socket* socket = &this->socketMap[pid][fd];
+      socket->state = TCP_ESTABLISHED;
 
       // seqBuf[3] = seqBuf[3] + 1;
       seq += 1;
@@ -436,8 +438,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       p.writeData(TCP_START+16, &newChecksum, 2);
       p.writeData(TCP_START+18, &newUrgent, 2);
 
-      this->cancelTimer(this->socketMap[pid][fd].timerUUID);
-      this->returnSystemCall(this->socketMap[pid][fd].syscallUUID, 0);
+      this->cancelTimer(socket->timerUUID);
+      this->returnSystemCall(socket->syscallUUID, 0);
 
       break;
     }
@@ -461,21 +463,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       if (pid == -1 || fd == -1) return;
 
+      socket* socket = &this->socketMap[pid][fd];
+
       if (payloadLen == 0) { // handshaking 패킷임
         // 그리고 accpet될 수 있도록 q에 넣어줘
         this->backlogMap[pid].current--;
         this->backlogMap[pid].q.push(fd);
 
-        this->socketMap[pid][fd].state = TCP_ESTABLISHED;
+        socket->state = TCP_ESTABLISHED;
 
-        if (this->socketMap[pid][fd].syscallUUID) {
-          this->cancelTimer(this->socketMap[pid][fd].timerUUID);
-          this->returnSystemCall(this->socketMap[pid][fd].syscallUUID, 0);
+        if (socket->syscallUUID) {
+          this->cancelTimer(socket->timerUUID);
+          this->returnSystemCall(socket->syscallUUID, 0);
         }
         return;
 
       } else { // payload를 담고 있는 data 패킷임
-        
+
       }
 
       return;
