@@ -875,6 +875,8 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   s.state = TCP_CLOSED;
   s.binded = false;
   s.rcvWindow = nullptr;
+  // s.estRTT = 100000000.0f; // 100ms
+  // s.devRTT = 0.0f;
   this->socketMap[pid].insert(std::pair<int, socket>(fd, s));
   this->returnSystemCall(syscallUUID, fd);
 };
@@ -1098,10 +1100,23 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, char* src, 
 		response.writeData(TCP_START + 17, &newChecksum2, 1);
 
 		this->sendPacket("IPv4", std::move(response));
+
+    // timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
+    // tp->from = WRITE;
+    // tp->syscallUUID = syscallUUID;
+    // tp->pid = pid;
+    // tp->fd = fd;
+    // tp->write_src = src + sentLength;
+    // tp->write_size = leftLength;
+    // assert(sentLength+leftLength == size);
+    // UUID timerUUID = this->addTimer(tp, socketMap[pid][fd].estRTT + 4 * socketMap[pid][fd].devRTT);
+    // socketMap[pid][fd].timersToBeAcked.push(std::make_pair(socketMap[pid][fd].localseq + length - 20, timerUUID));
+
 		socketMap[pid][fd].localseq += (length - 20);
 		sentLength += length - 20;
 		leftLength -= (length - 20);
 	}
+  // TODO: write return should be blocked until all data are well sent
 	this->returnSystemCall(syscallUUID, sentLength);
 };
 
@@ -1308,6 +1323,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       int pid, fd = -1;
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
+          // TODO: 일단 알맞은 pid, fd를 찾고, TCP_ESTABLISHED 여부에 따른 동작은 뒤로 빼기
           if(itFd->second.state == TCP_ESTABLISHED && //과제 3
             itFd->second.remoteAddr.sin_addr.s_addr == ipSrc &&
             itFd->second.remoteAddr.sin_port == portSrc){
@@ -1315,6 +1331,17 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
             fd = itFd->first;
 
             if(htons(packetLength) == 40){ //write한 것의 ack 반환이 도착한 경우.
+              // socket* s = &this->socketMap[pid][fd];
+              // uint32_t ack = ntohl( *( (uint32_t*)ackBuf ) );
+              // // iterate through s->timersToBeAcked
+              // while(
+              //   !s->timersToBeAcked.empty() &&
+              //   s->timersToBeAcked.front().first <= ack
+              // ){
+              //   this->cancelTimer(s->timersToBeAcked.front().second);
+              //   s->timersToBeAcked.pop();
+              // }
+
               return;
             }
 
@@ -1450,6 +1477,13 @@ void TCPAssignment::timerCallback(std::any payload) {
       break;
     case READ:
       this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_dst, tp->read_size);
+      break;
+    case WRITE:
+      // while(!this->socketMap[tp->pid][tp->fd].timersToBeAcked.empty()) {
+      //   this->cancelTimer(this->socketMap[tp->pid][tp->fd].timersToBeAcked.front().second);
+      //   this->socketMap[tp->pid][tp->fd].timersToBeAcked.pop();
+      // }
+      // this->syscall_write(tp->syscallUUID, tp->pid, tp->fd, tp->write_src, tp->write_size);
       break;
     default:
       break;

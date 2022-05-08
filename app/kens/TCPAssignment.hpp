@@ -25,6 +25,9 @@
 #define PSH 0b1000
 #define FIN 1
 
+#define RTT_ALPHA 0.125
+#define RTT_BETA 0.25
+
 namespace E {
   //여기서부터 새 코드.
   const int LinkSize = 4096;
@@ -143,6 +146,8 @@ struct socket {
   uint32_t localseq; //내가 보낼 첫 바이트
   uint32_t remoteseq; //상대가 보낼 첫 바이트
 
+  float estRTT, devRTT;
+  std::queue<std::pair<uint32_t, UUID>> timersToBeAcked;
 };
 
 struct backlog {
@@ -168,6 +173,10 @@ struct timerPayload {
   //connect의 반환에 사용.
   sockaddr* connect_addr;
   socklen_t connect_addrLen;
+
+  //write의 반환에 사용.
+  char* write_src;
+  int write_size;
 };
 
 class TCPAssignment : public HostModule,
