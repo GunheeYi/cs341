@@ -57,9 +57,9 @@ struct socket {
 
   char* readBuf;
   char* writeBuf;
-  size_t readStart;
-  size_t readEnd;
-  size_t readBufOffset; // (starting sequence number)
+  uint32_t readStart;
+  uint32_t readEnd;
+  uint32_t readBufOffset; // (starting sequence number)
   bool readBufOffsetSet;
   std::list<readBufMarker> readBufMarkers;
 };
@@ -99,8 +99,8 @@ protected:
 
   void syscall_socket(UUID, int, int, int, int);
   void syscall_close(UUID, int, int);
-  void syscall_read(UUID, int, int, char*, int);
-  void syscall_write(UUID, int, int, char*, int);
+  void syscall_read(UUID, int, int, void*, int);
+  void syscall_write(UUID, int, int, void*, int);
   void syscall_connect(UUID, int, int, sockaddr*, socklen_t);
   void syscall_listen(UUID, int, int, int);
   void syscall_accept(UUID, int, int, sockaddr*, socklen_t*);
