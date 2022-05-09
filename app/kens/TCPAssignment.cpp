@@ -176,16 +176,18 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
 
   int fdToAccept = this->backlogMap[pid].q.front();
   this->backlogMap[pid].q.pop();
-  assert(this->socketMap[pid].find(fdToAccept) != this->socketMap[pid].end());
 
-  this->socketMap[pid][fdToAccept].readBuf = (char*) malloc(READ_BUFFER_SIZE);
-  this->socketMap[pid][fdToAccept].writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
-  this->socketMap[pid][fdToAccept].readStart = 0;
-  this->socketMap[pid][fdToAccept].readEnd = 0;
-  this->socketMap[pid][fdToAccept].readBufOffsetSet = false;
+  assert(this->socketMap[pid].find(fdToAccept) != this->socketMap[pid].end());
+  socket* s = &this->socketMap[pid][fdToAccept];
+
+  s->readBuf = (char*) malloc(READ_BUFFER_SIZE);
+  s->writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
+  s->readStart = 0;
+  s->readEnd = 0;
+  s->readBufOffsetSet = false;
   
   sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
-  memcpy(addrPtr_in, &this->socketMap[pid][fdToAccept].remoteAddr, sizeof(sockaddr_in));
+  memcpy(addrPtr_in, &s->remoteAddr, sizeof(sockaddr_in));
   *addrLenPtr = sizeof(sockaddr_in);
 
   this->returnSystemCall(syscallUUID, fdToAccept);
@@ -205,16 +207,18 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   // TODO: 이미 bind된 소켓 중에 ip/port 겹치는 것 있는지 확인 필요?
   assert(this->socketMap.find(pid) != this->socketMap.end());
   assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
-  if (!this->socketMap[pid][fd].binded) {
-    this->socketMap[pid][fd].localAddr.sin_family = AF_INET;
-    this->socketMap[pid][fd].localAddr.sin_addr.s_addr = (uint32_t) NetworkUtil::arrayToUINT64(*ipSrc);
-    this->socketMap[pid][fd].localAddr.sin_port = portSrc;
-    this->socketMap[pid][fd].binded = true;
+
+  socket* s = &this->socketMap[pid][fd];
+  if (!s->binded) {
+    s->localAddr.sin_family = AF_INET;
+    s->localAddr.sin_addr.s_addr = (uint32_t) NetworkUtil::arrayToUINT64(*ipSrc);
+    s->localAddr.sin_port = portSrc;
+    s->binded = true;
   }
 
-  this->socketMap[pid][fd].remoteAddr.sin_family = AF_INET;
-  this->socketMap[pid][fd].remoteAddr.sin_addr.s_addr = addrPtr_in->sin_addr.s_addr;
-  this->socketMap[pid][fd].remoteAddr.sin_port = addrPtr_in->sin_port;
+  s->remoteAddr.sin_family = AF_INET;
+  s->remoteAddr.sin_addr.s_addr = addrPtr_in->sin_addr.s_addr;
+  s->remoteAddr.sin_port = addrPtr_in->sin_port;
   
   uint8_t seq[4], ack[4];
   seq[3] = 100;
@@ -251,13 +255,13 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   p.writeData(TCP_START + 17, &newChecksum2, 1);
   
   this->sendPacket("IPv4", std::move(p));
-  this->socketMap[pid][fd].state = TCP_SYN_SENT;
+  s->state = TCP_SYN_SENT;
 
   timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
   tp->from = CONNECT;
   tp->syscallUUID = syscallUUID;
-  this->socketMap[pid][fd].timerUUID = this->addTimer(tp, 100000000U);
-  this->socketMap[pid][fd].syscallUUID = syscallUUID;
+  s->timerUUID = this->addTimer(tp, 100000000U);
+  s->syscallUUID = syscallUUID;
 
 };
 
@@ -437,16 +441,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       if (pid == -1 || fd == -1) return;
 
-      socket* socket = &this->socketMap[pid][fd];
-      socket->state = TCP_ESTABLISHED;
+      socket* s = &this->socketMap[pid][fd];
+      s->state = TCP_ESTABLISHED;
       // printf("TCP conection established in client side.\n");
 
       newSeq = rand();
       newAck = seq + 1;
       newFlags = ACK;
 
-      this->cancelTimer(socket->timerUUID);
-      this->returnSystemCall(socket->syscallUUID, 0);
+      this->cancelTimer(s->timerUUID);
+      this->returnSystemCall(s->syscallUUID, 0);
 
       break;
     }
@@ -470,23 +474,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       }
       if (pid == -1 || fd == -1) return;
 
-      socket* socket = &this->socketMap[pid][fd];
+      socket* s = &this->socketMap[pid][fd];
 
       if (payloadLen == 0) {
-        if (socket->state != TCP_ESTABLISHED) { // handshaking 패킷임
+        if (s->state != TCP_ESTABLISHED) { // handshaking 패킷임
           // printf("PACKET ARRIVED: ACK packet for last handshaking step.\n");
           // accpet될 수 있도록 q에 넣어줘
           this->backlogMap[pid].current--;
           this->backlogMap[pid].q.push(fd);
 
-          socket->state = TCP_ESTABLISHED;
+          s->state = TCP_ESTABLISHED;
           // printf("TCP conection established in server side.\n");
 
           // simulatneous connect handling
           // TODO: socket에 syscallUUID랑 timerUUID를 저장해놓는게 맞아?
-          if (socket->syscallUUID) {
-            this->cancelTimer(socket->timerUUID);
-            this->returnSystemCall(socket->syscallUUID, 0);
+          if (s->syscallUUID) {
+            this->cancelTimer(s->timerUUID);
+            this->returnSystemCall(s->syscallUUID, 0);
           }
           
           return;
@@ -497,20 +501,20 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       } else { // payload를 담고 있는 data 패킷임
         // printf("PACKET ARRIVED: Data packet with payload.\n");
-        assert(socket->state == TCP_ESTABLISHED);
-        if (!socket->readBufOffsetSet) {
-          socket->readBufOffset = seq;
-          socket->readBufOffsetSet = true;
+        assert(s->state == TCP_ESTABLISHED);
+        if (!s->readBufOffsetSet) {
+          s->readBufOffset = seq;
+          s->readBufOffsetSet = true;
         }
 
         // relative sequence number
-        size_t seqRel = seq - socket->readBufOffset;
+        size_t seqRel = seq - s->readBufOffset;
         size_t seqRel_ = seqRel % READ_BUFFER_SIZE; // _가 붙은 변수는 mod READ_BUFFER_SIZE 연산이 되었음을 의미
 
         // read buffer overflow
         if (
-          seqRel < socket->readStart ||
-          seqRel + payloadLen > socket->readStart + READ_BUFFER_SIZE) {
+          seqRel < s->readStart ||
+          seqRel + payloadLen > s->readStart + READ_BUFFER_SIZE) {
           // printf("PACKET ARRIVED: Read buffer overflow. Rejecting incoming packet.\n");
           // TODO: 이전 유효 ack number 다시 보내줘야 하나?
           return;
@@ -522,10 +526,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         if (seqRel_ + payloadLen > READ_BUFFER_SIZE) { // write should be wrapped
           size_t len1 = READ_BUFFER_SIZE - seqRel_;
           size_t len2 = payloadLen - len1;
-          packet.readData(PAYLOAD_START, socket->readBuf + seqRel_, len1);
-          packet.readData(PAYLOAD_START + len1, socket->readBuf, len2);
+          packet.readData(PAYLOAD_START, s->readBuf + seqRel_, len1);
+          packet.readData(PAYLOAD_START + len1, s->readBuf, len2);
         } else { // write is simple
-          packet.readData(PAYLOAD_START, socket->readBuf + seqRel_, payloadLen);
+          packet.readData(PAYLOAD_START, s->readBuf + seqRel_, payloadLen);
         }
 
         readBufMarker marker;
@@ -537,30 +541,30 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
         // 일단 벡터에 새 마커를 순서 맞게 넣어
         std::list<readBufMarker>::iterator itMarker;
-        for (itMarker = socket->readBufMarkers.begin(); itMarker != socket->readBufMarkers.end(); itMarker++) {
+        for (itMarker = s->readBufMarkers.begin(); itMarker != s->readBufMarkers.end(); itMarker++) {
           if (
             itMarker->start <= marker.start && 
             (
-              std::next(itMarker) == socket->readBufMarkers.end() ||
+              std::next(itMarker) == s->readBufMarkers.end() ||
               std::next(itMarker)->start >= marker.start
             )
           ) break;
         }
-        socket->readBufMarkers.insert(std::next(itMarker), marker);
+        s->readBufMarkers.insert(std::next(itMarker), marker);
 
         // 그리고 readEnd 확장할 수 있는데까지 확장하고 처리된 마커들 vector에서 pop해
-        for (itMarker = socket->readBufMarkers.begin(); itMarker != socket->readBufMarkers.end(); ) {
+        for (itMarker = s->readBufMarkers.begin(); itMarker != s->readBufMarkers.end(); ) {
           std::list<readBufMarker>::iterator itMarkerNext = std::next(itMarker);
-          if (itMarker->start <= socket->readEnd) {
+          if (itMarker->start <= s->readEnd) {
             // printf("PACKET ARRIVED: Extending readEnd from %d to %d.\n", socket->readEnd, itMarker->end);
-            socket->readEnd = itMarker->end;
-            socket->readBufMarkers.erase(itMarker);
+            s->readEnd = itMarker->end;
+            s->readBufMarkers.erase(itMarker);
           } else break;
           itMarker = itMarkerNext;
         }
 
         newSeq = 1;
-        newAck = socket->readEnd + socket->readBufOffset;
+        newAck = s->readEnd + s->readBufOffset;
         newFlags = ACK;
 
         break;
