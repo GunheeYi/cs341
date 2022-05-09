@@ -177,6 +177,12 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
   int fdToAccept = this->backlogMap[pid].q.front();
   this->backlogMap[pid].q.pop();
   assert(this->socketMap[pid].find(fdToAccept) != this->socketMap[pid].end());
+
+  this->socketMap[pid][fdToAccept].readBuf = (char*) malloc(READ_BUFFER_SIZE);
+  this->socketMap[pid][fdToAccept].writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
+  this->socketMap[pid][fdToAccept].readStart = 0;
+  this->socketMap[pid][fdToAccept].readEnd = 0;
+  this->socketMap[pid][fdToAccept].readBufOffsetSet = false;
   
   sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
   memcpy(addrPtr_in, &this->socketMap[pid][fdToAccept].remoteAddr, sizeof(sockaddr_in));
@@ -491,6 +497,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       } else { // payload를 담고 있는 data 패킷임
         // printf("PACKET ARRIVED: Data packet with payload.\n");
+        assert(socket->state == TCP_ESTABLISHED);
         if (!socket->readBufOffsetSet) {
           socket->readBufOffset = seq;
           socket->readBufOffsetSet = true;
