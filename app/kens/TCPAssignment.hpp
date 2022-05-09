@@ -75,9 +75,16 @@ struct timerPayload {
   int syscallUUID;
   int pid;
   int fd;
-  sockaddr* addrPtr;
-  socklen_t* addrLenPtr;
-  socklen_t addrLen;
+
+  // ACCEPT
+  sockaddr* accept_addrPtr;
+  socklen_t* accept_addrLenPtr;
+  socklen_t accept_addrLen;
+
+  // READ
+  void* read_start;
+  uint32_t read_len;
+  
 };
 
 class TCPAssignment : public HostModule,
@@ -99,8 +106,8 @@ protected:
 
   void syscall_socket(UUID, int, int, int, int);
   void syscall_close(UUID, int, int);
-  void syscall_read(UUID, int, int, void*, int);
-  void syscall_write(UUID, int, int, void*, int);
+  void syscall_read(UUID, int, int, void*, uint32_t);
+  void syscall_write(UUID, int, int, void*, uint32_t);
   void syscall_connect(UUID, int, int, sockaddr*, socklen_t);
   void syscall_listen(UUID, int, int, int);
   void syscall_accept(UUID, int, int, sockaddr*, socklen_t*);

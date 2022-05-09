@@ -29,12 +29,14 @@ void TCPAssignment::finalize() {}
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter &param) {
   switch (param.syscallNumber) {
   case SOCKET:
+    // printf("SYSCALL: SOCKET\n");
     this->syscall_socket(
       syscallUUID, pid, 
       std::get<int>(param.params[0]), std::get<int>(param.params[1]), std::get<int>(param.params[2])
     );
     break;
   case BIND:
+    // printf("SYSCALL: BIND\n");
     this->syscall_bind(
       syscallUUID, pid, std::get<int>(param.params[0]),
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -42,6 +44,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case LISTEN:
+    // printf("SYSCALL: LISTEN\n");
     this->syscall_listen(
       syscallUUID, pid, 
       std::get<int>(param.params[0]),
@@ -49,6 +52,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case ACCEPT:
+    printf("SYSCALL: ACCEPT\n");
     this->syscall_accept(
       syscallUUID, pid, std::get<int>(param.params[0]),
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -56,6 +60,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case CONNECT:
+    // printf("SYSCALL: CONNECT\n");
     this->syscall_connect(
       syscallUUID, pid, std::get<int>(param.params[0]), 
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -63,16 +68,19 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case READ:
+    // printf("SYSCALL: READ\n");
     this->syscall_read(syscallUUID, pid, std::get<int>(param.params[0]),
                        std::get<void *>(param.params[1]),
                        std::get<int>(param.params[2]));
     break;
   case WRITE:
+    // printf("SYSCALL: WRITE\n");
     this->syscall_write(syscallUUID, pid, std::get<int>(param.params[0]),
                         std::get<void *>(param.params[1]),
                         std::get<int>(param.params[2]));
     break;
   case CLOSE:
+    // printf("SYSCALL: CLOSE\n");
     this->syscall_close(syscallUUID, pid, std::get<int>(param.params[0]));
     break;
   case GETSOCKNAME:
@@ -160,8 +168,8 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
     tp->syscallUUID = syscallUUID;
     tp->pid = pid;
     tp->fd = fd;
-    tp->addrPtr = addrPtr;
-    tp->addrLenPtr = addrLenPtr;
+    tp->accept_addrPtr = addrPtr;
+    tp->accept_addrLenPtr = addrLenPtr;
     this->addTimer(tp, 100000000U);
     return;
   }
@@ -247,11 +255,38 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
 
 };
 
-void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start, int len) {
+void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start, uint32_t len) {
+  assert(this->socketMap.find(pid) != this->socketMap.end());
+  assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
+
+  socket* s = &this->socketMap[pid][fd];
+
+  if (s->state != TCP_ESTABLISHED) this->returnSystemCall(syscallUUID, -1);
+
+  if (s->readStart == s->readEnd) { // 읽을 데이터가 없음
+    // printf("READ: no data to read in read buffer\n");
+    timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
+    tp->from = READ;
+    tp->syscallUUID = syscallUUID;
+    tp->pid = pid;
+    tp->fd = fd;
+    tp->read_start = start;
+    tp->read_len = len;
+    this->addTimer(tp, 100000000U);
+    return;
+  }
+  uint32_t available = s->readEnd - s->readStart;
+  uint32_t readLen = available < len ? available : len;
+
+  memcpy(start, s->readBuf + s->readStart, readLen);
+  s->readStart += readLen;
+
+  this->returnSystemCall(syscallUUID, readLen);
+
   return;
 };
 
-void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, int len) {
+void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, uint32_t len) {
   return;
 };
 
@@ -292,6 +327,8 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, socka
 };
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
+  // printf("PACKET ARRIVED.\n");
+
   uint32_t ipSrc, ipDst;
   uint16_t portSrc, portDst;
   uint8_t seqBuf[4], ackBuf[4];
@@ -396,6 +433,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       socket* socket = &this->socketMap[pid][fd];
       socket->state = TCP_ESTABLISHED;
+      // printf("TCP conection established in client side.\n");
 
       newSeq = rand();
       newAck = seq + 1;
@@ -430,11 +468,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       if (payloadLen == 0) {
         if (socket->state != TCP_ESTABLISHED) { // handshaking 패킷임
+          // printf("PACKET ARRIVED: ACK packet for last handshaking step.\n");
           // accpet될 수 있도록 q에 넣어줘
           this->backlogMap[pid].current--;
           this->backlogMap[pid].q.push(fd);
 
           socket->state = TCP_ESTABLISHED;
+          // printf("TCP conection established in server side.\n");
 
           // simulatneous connect handling
           // TODO: socket에 syscallUUID랑 timerUUID를 저장해놓는게 맞아?
@@ -447,8 +487,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         }
 
         // data 패킷에 대한 ack 응답임
+        // printf("PACKET ARRIVED: ACK response to data packet.\n");
 
       } else { // payload를 담고 있는 data 패킷임
+        // printf("PACKET ARRIVED: Data packet with payload.\n");
         if (!socket->readBufOffsetSet) {
           socket->readBufOffset = seq;
           socket->readBufOffsetSet = true;
@@ -462,6 +504,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         if (
           seqRel < socket->readStart ||
           seqRel + payloadLen > socket->readStart + READ_BUFFER_SIZE) {
+          // printf("PACKET ARRIVED: Read buffer overflow. Rejecting incoming packet.\n");
           // TODO: 이전 유효 ack number 다시 보내줘야 하나?
           return;
         }
@@ -502,6 +545,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         for (itMarker = socket->readBufMarkers.begin(); itMarker != socket->readBufMarkers.end(); ) {
           std::list<readBufMarker>::iterator itMarkerNext = std::next(itMarker);
           if (itMarker->start <= socket->readEnd) {
+            // printf("PACKET ARRIVED: Extending readEnd from %d to %d.\n", socket->readEnd, itMarker->end);
             socket->readEnd = itMarker->end;
             socket->readBufMarkers.erase(itMarker);
           } else break;
@@ -561,10 +605,13 @@ void TCPAssignment::timerCallback(std::any payload) {
   timerPayload* tp = std::any_cast<timerPayload*>(payload);
   switch (tp->from) {
     case ACCEPT:
-      this->syscall_accept(tp->syscallUUID, tp->pid, tp->fd, tp->addrPtr, tp->addrLenPtr);
+      this->syscall_accept(tp->syscallUUID, tp->pid, tp->fd, tp->accept_addrPtr, tp->accept_addrLenPtr);
       break;
     case CONNECT:
       this->returnSystemCall(tp->syscallUUID, -1);
+      break;
+    case READ:
+      this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_start, tp->read_len);
       break;
     case CLOSE:
       // printf("timerCallback: CLOSE\n");
