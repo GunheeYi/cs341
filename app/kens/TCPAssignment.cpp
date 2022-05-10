@@ -52,7 +52,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case ACCEPT:
-    printf("SYSCALL: ACCEPT\n");
+    // printf("SYSCALL: ACCEPT\n");
     this->syscall_accept(
       syscallUUID, pid, std::get<int>(param.params[0]),
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -118,6 +118,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   s.readStart = 0;
   s.readEnd = 0;
   s.readBufOffsetSet = false;
+  s.seq = 1;
   
   this->socketMap[pid].insert(std::pair<int, socket>(fd, s));
   this->returnSystemCall(syscallUUID, fd);
@@ -185,6 +186,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
   s->readStart = 0;
   s->readEnd = 0;
   s->readBufOffsetSet = false;
+  s->seq = 1;
   
   sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
   memcpy(addrPtr_in, &s->remoteAddr, sizeof(sockaddr_in));
@@ -220,27 +222,27 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   s->remoteAddr.sin_addr.s_addr = addrPtr_in->sin_addr.s_addr;
   s->remoteAddr.sin_port = addrPtr_in->sin_port;
   
-  uint8_t seq[4], ack[4];
-  seq[3] = 100;
+  s->seq = rand();
+  uint32_t seqN = htonl(s->seq);
+  uint32_t ackN = htonl(0);
   uint8_t headLen = 5 << 4, flags = SYN;
   uint16_t window = 51200, checksum = 0, urgent = 0, newChecksum;
   
-  Packet p(HANDSHAKE_PACKET_SIZE);
+  Packet p(TCP_START + TCP_HEADER_SIZE);
 
   p.writeData(IP_START+12, &ipSrc, 4);
   p.writeData(IP_START+16, &addrPtr_in->sin_addr.s_addr, 4);
   p.writeData(TCP_START+0, &portSrc, 2);
   p.writeData(TCP_START+2, &addrPtr_in->sin_port, 2);
-  p.writeData(TCP_START+4, &seq, 4);
-  p.writeData(TCP_START+8, &ack, 4);
+  p.writeData(TCP_START+4, &seqN, 4);
+  p.writeData(TCP_START+8, &ackN, 4);
   p.writeData(TCP_START+12, &headLen, 1);
   p.writeData(TCP_START+13, &flags, 1);
   p.writeData(TCP_START+14, &window, 2);
   p.writeData(TCP_START+16, &checksum, 2);
   p.writeData(TCP_START+18, &urgent, 2);
-  assert(checksum==0);
 
-  uint8_t buf[HANDSHAKE_PACKET_SIZE];
+  uint8_t buf[TCP_START + TCP_HEADER_SIZE];
   p.readData(0, buf, 54);
   assert(buf[TCP_START + 16] == 0);
   assert(buf[TCP_START + 17] == 0);
@@ -297,7 +299,68 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start,
 };
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, uint32_t len) {
-  return;
+  assert(this->socketMap.find(pid) != this->socketMap.end());
+  assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
+  socket* s = &this->socketMap[pid][fd];
+
+  uint32_t ipSrc = s->localAddr.sin_addr.s_addr;
+  uint32_t ipDst = s->remoteAddr.sin_addr.s_addr;
+  uint16_t portSrc = s->localAddr.sin_port;
+  uint16_t portDst = s->remoteAddr.sin_port;
+
+  uint32_t newSeqN;
+  uint32_t newAckN = htonl(1);
+  uint8_t newHeadLen = 5 << 4;
+  uint8_t newFlags = ACK;
+  uint16_t newWindow = htons(51200);
+  uint16_t newChecksum = htons(0);
+  uint16_t newUrgent = htons(0);
+
+  uint32_t sent = 0;
+  uint32_t remaining = len;
+  uint32_t sending, packetSize;
+  
+	while(remaining != 0){
+		sending = remaining > MAX_SEGMENT_SIZE ? MAX_SEGMENT_SIZE : remaining;
+    packetSize = TCP_START + TCP_HEADER_SIZE + sending;
+    
+		Packet p(packetSize);
+    newSeqN = s->seq;
+		newSeqN = htonl(newSeqN);
+    p.writeData(IP_START+12, &ipSrc, 4);
+    p.writeData(IP_START+16, &ipDst, 4);
+    p.writeData(TCP_START+0, &portSrc, 2);
+    p.writeData(TCP_START+2, &portDst, 2);
+    p.writeData(TCP_START+4, &newSeqN, 4);
+    p.writeData(TCP_START+8, &newAckN, 4);
+    p.writeData(TCP_START+12, &newHeadLen, 1);
+    p.writeData(TCP_START+13, &newFlags, 1);
+    p.writeData(TCP_START+14, &newWindow, 2);
+    p.writeData(TCP_START+16, &newChecksum, 2);
+    p.writeData(TCP_START+18, &newUrgent, 2);
+    p.writeData(TCP_START+TCP_HEADER_SIZE, (char*)start + sent, sending);
+
+		uint8_t buf[packetSize];
+    p.readData(0, buf, packetSize);
+    assert(buf[TCP_START + 16] == 0);
+    assert(buf[TCP_START + 17] == 0);
+    newChecksum = NetworkUtil::tcp_sum(
+      *(uint32_t *)&buf[IP_START+12], *(uint32_t *)&buf[IP_START+16],
+      &buf[TCP_START], TCP_HEADER_SIZE + sending
+    );
+    newChecksum = ~newChecksum;
+    uint8_t newChecksum1 = (newChecksum & 0xff00) >> 8;
+    uint8_t newChecksum2 = (newChecksum & 0x00ff);
+    p.writeData(TCP_START + 16, &newChecksum1, 1);
+    p.writeData(TCP_START + 17, &newChecksum2, 1);
+    
+    this->sendPacket("IPv4", std::move(p));
+
+    s->seq += sending;
+    sent += sending;
+    remaining -= sending;
+	}
+	this->returnSystemCall(syscallUUID, sent);
 };
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
@@ -372,7 +435,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
   payloadLen = packet.getSize() - (TCP_START + headLen);
 
-  Packet p(HANDSHAKE_PACKET_SIZE);
+  Packet p(TCP_START + TCP_HEADER_SIZE);
 
   switch(flags) {
     case SYN:
@@ -443,10 +506,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       socket* s = &this->socketMap[pid][fd];
       s->state = TCP_ESTABLISHED;
-      // printf("TCP conection established in client side.\n");
 
-      newSeq = rand();
-      newAck = seq + 1;
+      s->seq += 1;
+      newSeq = s->seq;
+
+      s->ack = seq + 1;
+      newAck = s->ack;
+
       newFlags = ACK;
 
       this->cancelTimer(s->timerUUID);
@@ -484,7 +550,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           this->backlogMap[pid].q.push(fd);
 
           s->state = TCP_ESTABLISHED;
-          // printf("TCP conection established in server side.\n");
 
           // simulatneous connect handling
           // TODO: socket에 syscallUUID랑 timerUUID를 저장해놓는게 맞아?
@@ -556,7 +621,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         for (itMarker = s->readBufMarkers.begin(); itMarker != s->readBufMarkers.end(); ) {
           std::list<readBufMarker>::iterator itMarkerNext = std::next(itMarker);
           if (itMarker->start <= s->readEnd) {
-            // printf("PACKET ARRIVED: Extending readEnd from %d to %d.\n", socket->readEnd, itMarker->end);
             s->readEnd = itMarker->end;
             s->readBufMarkers.erase(itMarker);
           } else break;
@@ -595,13 +659,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   p.writeData(TCP_START+16, &newChecksum, 2);
   p.writeData(TCP_START+18, &newUrgent, 2);
   
-  uint8_t buf[HANDSHAKE_PACKET_SIZE];
+  uint8_t buf[TCP_START + TCP_HEADER_SIZE];
   p.readData(0, buf, 54);
   assert(buf[TCP_START + 16] == 0);
   assert(buf[TCP_START + 17] == 0);
   newChecksum = NetworkUtil::tcp_sum(
     *(uint32_t *)&buf[IP_START+12], *(uint32_t *)&buf[IP_START+16],
-    &buf[TCP_START], 20
+    &buf[TCP_START], TCP_HEADER_SIZE
   );
   newChecksum = ~newChecksum;
   uint8_t newChecksum1 = (newChecksum & 0xff00) >> 8;

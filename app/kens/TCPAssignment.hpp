@@ -19,6 +19,8 @@
 #define IP_START 14
 #define TCP_START 34
 #define HANDSHAKE_PACKET_SIZE 54
+#define TCP_HEADER_SIZE 20
+#define MAX_SEGMENT_SIZE 1460
 #define TWO_MEGA 2097152
 #define READ_BUFFER_SIZE TWO_MEGA
 #define WRITE_BUFFER_SIZE TWO_MEGA
@@ -62,6 +64,8 @@ struct socket {
   uint32_t readBufOffset; // (starting sequence number)
   bool readBufOffsetSet;
   std::list<readBufMarker> readBufMarkers;
+  uint32_t seq;
+  uint32_t ack;
 };
 
 struct backlog { // 용어 개선 가능하다
