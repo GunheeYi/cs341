@@ -165,7 +165,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int capaci
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* addrPtr, socklen_t* addrLenPtr) {
   if ( this->backlogMap[pid].q.empty() ) {
     timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
-    tp->from = ACCEPT;
+    tp->from = TIMER_FROM_ACCEPT;
     tp->syscallUUID = syscallUUID;
     tp->pid = pid;
     tp->fd = fd;
@@ -252,7 +252,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   s->state = TCP_SYN_SENT;
 
   timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
-  tp->from = CONNECT;
+  tp->from = TIMER_FROM_CONNECT;
   tp->syscallUUID = syscallUUID;
   tp->pid = pid;
   tp->fd = fd;
@@ -274,7 +274,7 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start,
   if (s->readStart == s->readEnd) { // 읽을 데이터가 없음
     // printf("READ: no data to read in read buffer\n");
     timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
-    tp->from = READ;
+    tp->from = TIMER_FROM_READ;
     tp->syscallUUID = syscallUUID;
     tp->pid = pid;
     tp->fd = fd;
@@ -358,7 +358,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
 	}
 
   timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
-  tp->from = WRITE;
+  tp->from = TIMER_FROM_WRITE;
   tp->syscallUUID = syscallUUID;
   tp->pid = pid;
   tp->fd = fd;
@@ -410,6 +410,8 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, socka
 void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // printf("PACKET ARRIVED.\n");
 
+  socket* newSocket; // Used exclusively for SYN flagged packets.
+
   uint16_t tcpSegLen;
   uint32_t ipSrc, ipDst;
   uint16_t portSrc, portDst;
@@ -449,7 +451,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   );
   calculatedChecksum = ~calculatedChecksum;
   if(calculatedChecksum != ntohs(checksum)){
-    printf("Checksum error. !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    // printf("Checksum error. !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     return;
   }
 
@@ -495,7 +497,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       this->backlogMap[pid].current++;
 
       int newfd = this->createFileDescriptor(pid);
-      socket* newSocket = &this->socketMap[pid][newfd];
+      newSocket = &this->socketMap[pid][newfd];
       memcpy(&newSocket->localAddr, &this->socketMap[pid][listeningfd].localAddr, sizeof(sockaddr_in));
       newSocket->localAddr.sin_addr.s_addr = ipDst;
       newSocket->remoteAddr.sin_family = AF_INET;
@@ -584,6 +586,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
           s->state = TCP_ESTABLISHED;
           s->seq += 1;
+
+          this->cancelTimer(s->handshakeTimerUUID);
 
           // simulatneous connect handling
           // TODO: socket에 syscallUUID랑 timerUUID를 저장해놓는게 맞아?
@@ -711,28 +715,46 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   p.writeData(TCP_START + 17, &newChecksum2, 1);
   
   this->sendPacket("IPv4", std::move(p));
+
+  if (flags == SYN) {
+    timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
+    tp->from = TIMER_FROM_HANDSHAKE;
+    tp->handshake_packet = p.clone();
+    tp->handshake_socketPtr = newSocket;
+    newSocket->handshakeTimerUUID = this->addTimer(tp, 100000000U);
+  }
 }
 
 void TCPAssignment::timerCallback(std::any payload) {
   timerPayload* tp = std::any_cast<timerPayload*>(payload);
   switch (tp->from) {
-    case ACCEPT:
+    case TIMER_FROM_ACCEPT:
       this->syscall_accept(tp->syscallUUID, tp->pid, tp->fd, tp->accept_addrPtr, tp->accept_addrLenPtr);
       break;
-    case CONNECT:
+    case TIMER_FROM_CONNECT:
       this->syscall_connect(tp->syscallUUID, tp->pid, tp->fd, tp->connect_addrPtr, tp->connect_addrLen);
       // this->returnSystemCall(tp->syscallUUID, -1);
       break;
-    case READ:
+    case TIMER_FROM_READ:
       this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_start, tp->read_len);
       break;
-    case WRITE:
+    case TIMER_FROM_WRITE:
       this->syscall_write(tp->syscallUUID, tp->pid, tp->fd, tp->write_start, tp->write_len);
       break;
-    case CLOSE:
+    case TIMER_FROM_CLOSE:
       // printf("timerCallback: CLOSE\n");
       // this->syscall_close(tp->syscallUUID, tp->pid, tp->fd);
       break;
+    case TIMER_FROM_HANDSHAKE:
+    {
+      this->sendPacket("IPv4", std::move(tp->handshake_packet));
+      timerPayload* tp_ = (timerPayload*) malloc(sizeof(timerPayload));
+      tp_->from = TIMER_FROM_HANDSHAKE;
+      tp_->handshake_packet = tp->handshake_packet.clone();
+      tp_->handshake_socketPtr = tp->handshake_socketPtr;
+      tp_->handshake_socketPtr->handshakeTimerUUID = this->addTimer(tp_, 100000000U);
+      break;
+    }
     default:
       break;
   }

@@ -44,6 +44,21 @@ enum TCPState {
   TCP_TIME_WAIT
 };
 
+enum TimerFrom {
+  TIMER_FROM_BLAHBLAH,
+  TIMER_FROM_SOCKET,
+  TIMER_FROM_CLOSE,
+  TIMER_FROM_READ,
+  TIMER_FROM_WRITE,
+  TIMER_FROM_CONNECT,
+  TIMER_FROM_LISTEN,
+  TIMER_FROM_ACCEPT,
+  TIMER_FROM_BIND,
+  TIMER_FROM_GETSOCKNAME,
+  TIMER_FROM_GETPEERNAME,
+  TIMER_FROM_HANDSHAKE
+};
+
 struct readBufMarker {
   size_t start;
   size_t end;
@@ -55,6 +70,7 @@ struct socket {
   sockaddr_in remoteAddr;
   bool binded;
   UUID timerUUID;
+  UUID handshakeTimerUUID;
   int syscallUUID;
 
   char* readBuf;
@@ -77,7 +93,7 @@ struct backlog { // 용어 개선 가능하다
 };
 
 struct timerPayload {
-  SystemCallInterface::SystemCall from;
+  TimerFrom from;
   int syscallUUID;
   int pid;
   int fd;
@@ -98,6 +114,10 @@ struct timerPayload {
   // WRITE
   void* write_start;
   uint32_t write_len;
+
+  // HANDSHAKE
+  Packet handshake_packet;
+  socket* handshake_socketPtr;
   
 };
 
