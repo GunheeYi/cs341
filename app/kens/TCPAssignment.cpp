@@ -258,7 +258,6 @@ int SyncChannel::popData(char* Dst, int length){
 	while (leftLength != 0) {
 		char* dataHeadPos = this->getDataPos(&tempLength);
 		if (dataHeadPos == nullptr) {
-			printf("mallang-1, %d\n", tempLength);
 			break;
 		}
 		
@@ -342,30 +341,19 @@ void WriteToWindow(LinkedDataNode* _window_head, unsigned int _winhead_seq, unsi
 	int nodeOffsetCount = 0;
 	while (currentNode != nullptr) {
 		
-		printf("mallang2!\n");
-		std::cout << "that if: " << (int)(packet_seq - (_winhead_seq + LinkSize * nodeOffsetCount)) << std::endl;
-		std::cout << "that2: " << (int)((_winhead_seq + LinkSize * (nodeOffsetCount + 1)) - packet_seq) << std::endl;
-		fflush(stdout);
 		if ((int)(packet_seq - (_winhead_seq + LinkSize * nodeOffsetCount)) >= 0
 			&& (int)((_winhead_seq + LinkSize * (nodeOffsetCount + 1)) - packet_seq) > 0) {
 
 			if ((int)((packet_seq + packet_length) - (_winhead_seq + LinkSize * (nodeOffsetCount + 1))) > 0) {
-				printf("mallang3!\n");
-				fflush(stdout);
-		//TEMP:printf("   writeToWindow: 두 링크에 걸쳐 저장해야 하는 경우.\n");
 				//두 링크에 걸쳐 저장해야 하는 경우.
 				int packet_a_part = _winhead_seq + LinkSize * (nodeOffsetCount + 1) - packet_seq;
-				printf("A: %d", packet_a_part);
 				fflush(stdout);
 				memcpy(currentNode->linkStorage + (packet_seq - (_winhead_seq + LinkSize * nodeOffsetCount)), 
 					data, packet_a_part);
-				printf("mallang4!\n");
 				fflush(stdout);
 				memcpy(currentNode->to_tail->linkStorage, data + packet_a_part, packet_length - packet_a_part);
 			}
 			else {
-		//TEMP:printf("   writeToWindow: 앞 한 개의 링크를 안 넘는 경우.\n");
-				//앞 한 개의 링크를 안 넘는 경우.
 				memcpy(currentNode->linkStorage + (packet_seq - (_winhead_seq + LinkSize * nodeOffsetCount) ), 
 					data, packet_length);
 			}
@@ -392,13 +380,6 @@ PacketWindow::PacketWindow(SyncChannel* _target, unsigned int initial_seq) {
 }
 
 int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
-//TEMP:printf("\n");
-	// std::cout << "before receiving packet\n";
-	// if(targetChannel != nullptr){
-	// 	this->targetChannel->TestPrint();
-	// }else{
-	// 	//TEMP:printf("target channel null\n");
-	// }
 	if (state == WindowState::EMPTY) {
 		state = WindowState::RECEIVING;
 		if (targetChannel->datalink_head == nullptr) {
@@ -408,19 +389,15 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		}
 	} 
 	else if (state == WindowState::CONGESTED) {
-		//TEMP:printf("------ congested ------\n");
 		return -1;
 	}
 	
-	printf("lastSeq: %d\n", lastSeq);
-
 	LinkedDataNode* targetLink = targetChannel->datalink_tail; 
 	//현재 버퍼의 최종 링크.
 	int emptyLength = LinkSize - targetLink->usedLength;
 	//현재 윈도우의 targetChannel의 마지막 데이터링크의 여백. 
 	//혹시, 이미 buffer로 넘어간 영역의 패킷이 뒤늦게 전송된 경우. drop 함.
 	if ((int)(lastSeq - (seq + length)) >= 0) {
-	//TEMP:printf("late dup packet\n");
 	return 0;
 	}
 
@@ -433,9 +410,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			break;
 		}
 		else if (currentUB->headSeq == seq) {
-			// mallang TEST
-			//TEMP:printf("================= dup packet\n");
-			// mallang TEST
 			return 0; //dup packet.
 		}
 		prevUB = currentUB;
@@ -452,26 +426,19 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 	}
 
 	
-	//TEMP:printf("window link count: %d\n", windowLinkCount);
-
 	//** 중요 ** window가 가지는 블록도, targetChannel의 최대 링크 노드 갯수 제한을 잠재적으로 초과하지 않도록 합니다.
 	//검색 결과 확인.
 	if (currentUB == nullptr && prevUB == nullptr) {
 		// mallang TEST
-		printf("================= 1\n");
 		// mallang TEST
 		//window에 unsequenced 블록이 없는 경우.
 
 		if (int(lastSeq - seq) > 0) {
-			//TEMP:printf("error num: %d", int(lastSeq - seq));
 			throw std::runtime_error("weird packet detected");
 		}
 
 		//그 중에서도, loss 없이 바로 뒤에 붙은 경우.
 		if (seq == lastSeq) { //지금 받은 패킷이 unsequenced가 아닌 경우.
-			// mallang TEST
-			////TEMP:printf("================= 11\n");
-			// mallang TEST
 
 			//이 패킷을 받으면 버퍼가 초과되기 때문에, 더 받을 수 없는 경우(종료). 
 			if (targetChannel->LinkLen == targetChannel->MaxLinkLen
@@ -489,10 +456,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 				lastSeq += length;
 				return 0;
 			}
-
-			// mallang TEST
-			////TEMP:printf("================= 112\n");
-			// mallang TEST
 			//패킷에서 저장할 데이터가 현재 링크의 여백보다 큰 경우( 새 링크 생성 필요 )
 			//패킷의 크기는 *절대* 링크 1개를 초과하지 않으므로, 2번 이 작업을 수행할 경우는 X.
 			memcpy(targetLink->linkStorage + targetLink->usedLength,
@@ -531,9 +494,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			return 0;
 		}
 		else {
-			// mallang TEST
-			//TEMP:printf("================= 12\n");
-			// mallang TEST
 			//loss 가 발견된 경우
 			unsigned int overshoot_distance = seq + length - lastSeq; //버퍼 직후 빈 주소에서부터 지금 unsequenced된 데이터의 가장 마지막 바이트까지의 길이.
 
@@ -589,36 +549,24 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 
 			//패킷 데이터 저장.
 			if ((int)(seq - (lastSeq + emptyLength)) < 0) {
-				// mallang TEST
-				//TEMP:printf("================= 121\n");
-				// mallang TEST
-				//targetLink에 걸쳐 있는 경우.
 				int packet_a_part = lastSeq + emptyLength - seq;
 				if (packet_a_part < length) { //'완전' window 쪽 링크로 넘치는 경우.
-		////TEMP:printf("완전 window 쪽 link로 넘침\n");
 					memcpy(targetLink->linkStorage + targetLink->usedLength,
 						data, packet_a_part);
 					memcpy(window_head->linkStorage, data, length - packet_a_part);
 				}
 				else {
-		 			printf("targetlink 안에 US 데이터를 씀.\n");
 					memcpy(targetLink->linkStorage + targetLink->usedLength + (seq - lastSeq),
 						data, length);
 				}
 			}
 			else {
-				// mallang TEST
-				//TEMP:printf("================= 122\n");
-				// mallang TEST
 				WriteToWindow(window_head, lastSeq + emptyLength, seq, data, length);
 			}
 			return 0;
 		}
 	}
 	else if(currentUB == nullptr) {
-		// mallang TEST
-		printf("================= 2\n");
-		// mallang TEST
 		//현재 패킷이 윈도우의 가장 큰 seq 너머에 있는 경우
 		//마지막 UB에 붙어 있을 수도, 아니면 그마저도 떨어져 있을 수도 있음.
 		unsigned int overshoot_distance = seq + length - lastSeq;
@@ -637,13 +585,11 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		if ((int)(seq + length - (lastSeq + emptyLength + LinkSize * windowLinkCount)) > 0) {
 
 			if(window_head == nullptr){
-				printf("윈도우 링크가 추가됨1\n");
 				LinkedDataNode* newNode = new LinkedDataNode();
 				window_head = newNode;
 				window_tail = newNode;
 				IsWindowNew = true;
 			}else{
-				printf("윈도우 링크가 추가됨\n");
 				window_tail->to_tail = new LinkedDataNode(window_tail);
 				window_tail = window_tail->to_tail;
 			}
@@ -655,7 +601,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			prevUB->tailSeq += length;
 		}
 		else {
-			std::cout << "마지막 seq: " << prevUB->tailSeq << "현재 seq: " << seq << std::endl;
 			//마지막 UB 다음에 loss 있는 경우.
 			UnseqBlock* newUB = new UnseqBlock;
 			newUB->headSeq = seq;
@@ -668,8 +613,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 
 		if(IsWindowNew){ //윈도우가 생성되어 있으나, 그것에 바로 데이터를 쓰는 것이 아니라, targetLink에 걸쳐서 써야 하는 경우.
 			int packet_t_part = lastSeq + emptyLength - seq;
-			printf("packet_t_part: %d", packet_t_part);
-			printf("packet_t_after: %d", length - packet_t_part);
 			if(packet_t_part > 0){
 				//여기 수정했다.
 				memcpy(targetLink->linkStorage + LinkSize - packet_t_part,
@@ -677,14 +620,11 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 			}
 			memcpy(window_head->linkStorage, data + packet_t_part, length - packet_t_part);
 			if(length - packet_t_part == 8){
-				std::cout << "that address: " << (uint64_t)(&(window_head->linkStorage[0]))  << "|" << (uint64_t)(window_head) << std::endl;
 			}
 			IsWindowNew = false;
 		}
 		//윈도우 링크가 존재하여, 윈도우 링크에 작성하는 경우.
 		else if(window_tail != nullptr){
-		//TEMP:printf("윈도우 링크에 작성\n");
-			printf("mallang1!\n");
 			fflush(stdout);
 			WriteToWindow(last_window_tail, lastSeq + emptyLength + LinkSize * (windowLinkCount - 1), seq, data, length);
 			return 0;
@@ -693,7 +633,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		//TODO!!: 현재 마지막 윈도우의 가장 큰 seq의 직후/ 혹은 거리를 두고 이후에 붙었으나, 그것이 여전히 targetLink 이내인 경우가 처리되지 않았음.
 		int packet_targetLink_part = lastSeq + emptyLength - seq;
 		if (packet_targetLink_part < length) { // window 쪽 링크로 넘치는 경우.
-		printf("window 쪽 link로 넘침\n");
 		memcpy(targetLink->linkStorage + targetLink->usedLength,
 			data, packet_targetLink_part);
 
@@ -703,7 +642,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		// memcpy(window_head->linkStorage, data, length - packet_targetLink_part);
 		}
 		else {
-		//TEMP:printf("targetlink 안에서 끝남.\n");
 		memcpy(targetLink->linkStorage + targetLink->usedLength + (seq - lastSeq),
 			data, length);
 		}
@@ -711,20 +649,12 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 	}
 	else {
 		// mallang TEST
-		printf("================= 3\n");
-		// mallang TEST
 		// 두 UB 사이에 패킷이 들어가는 경우, 혹은 버퍼 끝과 윈도우 사이에 패킷 들어오는 경우.
 		if ((int)(lastSeq - seq) > 0) throw std::runtime_error("weird packet detected");
 
 		//버퍼 뒤에 바로 붙은 경우.
 		if (seq == lastSeq) {
-			// mallang TEST
-			//TEMP:printf("================= 31\n");
-			// mallang TEST
 			if (length <= emptyLength) {
-				// mallang TEST
-				//TEMP:printf("================= 32\n");
-				// mallang TEST
 				//먼저, 새 패킷이 targetLink를 넘지 않는 경우. 바로 데이터 집어넣기.
 				memcpy(targetLink->linkStorage + targetLink->usedLength,
 					data, length);
@@ -733,9 +663,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 				lastSeq += length;
 			}
 			else {
-				// mallang TEST
-				//TEMP:printf("================= 33\n");
-				// mallang TEST
 				//새 패킷이 targetLink를 넘는 경우
 				memcpy(targetLink->linkStorage + targetLink->usedLength,
 					data, emptyLength);
@@ -767,19 +694,12 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 
 			//여기서, 이 패킷의 끝이 바로 UB_head로 이어지는 경우.
 			if ((int)(seq + length - UB_head->headSeq) >= 0) {
-				// mallang TEST
-				//TEMP:printf("================= 34\n");
-				// mallang TEST
 				int thisUBlength = UB_head->tailSeq - UB_head->headSeq;
-				std::cout << "이 블럭의 길이: " << thisUBlength << "시작점: " << UB_head->headSeq << "끝점: " << UB_head->tailSeq <<std::endl;
-				std::cout << "현재(확장 전) 이 targetLink의 usedLen: " << targetLink->usedLength << std::endl;
 				lastSeq = UB_head->tailSeq;
 				if (thisUBlength <= LinkSize - targetLink->usedLength) {
 					//이 블럭이 tagetLink를 넘지 않는 경우.
 					targetLink->usedLength += thisUBlength;
-					std::cout << "new tL usedLen: " << targetLink->usedLength << std::endl;
 					//lastSeq += thisUBlength;
-					std::cout << "new lastSeq: " << lastSeq << std::endl;
 
 					UnseqBlock* oldUB = UB_head;
 					UB_head = oldUB->to_tail;
@@ -791,12 +711,10 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 				}
 				else {
 					//이 블럭이 window Link에 걸쳐 있는 경우(Link 편입 필요)
-					printf("windowLink 편입 필요\n");
 					int targetSide_window_length = LinkSize - targetLink->usedLength;
 					int pure_windowSide_length = thisUBlength - targetSide_window_length;
 
 					int mergingWindowCount = (pure_windowSide_length + LinkSize - 1) / LinkSize;
-					std::cout << "twl: " << targetSide_window_length << "pwl: " << pure_windowSide_length << "mwc: " << mergingWindowCount << std::endl;
 
 					LinkedDataNode* movinghead = window_head;
 					LinkedDataNode* movingtail = window_head;
@@ -808,8 +726,6 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 
 					//이거 movingtail null이었음.
 					movingtail->usedLength = pure_windowSide_length - LinkSize * (mergingWindowCount - 1);
-					std::cout << "movingHead usedLen: " << movinghead->usedLength << std::endl;
-					std::cout << "새 targetLink의 usedLen: " << movingtail->usedLength << std::endl;
 
 					if (movingtail->to_tail != nullptr) {
 						movingtail->to_tail->to_head = nullptr;
@@ -858,7 +774,6 @@ void PacketWindow::InspectWindow() {
 
 		std::cout << "---->| ";
 		for (int i = 0; i < LinkSize; i++) {
-			//TEMP:printf("%c", currentLink->linkStorage[i]);
 		}
 		std::cout << "|" << std::endl;
 
@@ -891,7 +806,6 @@ void TCPAssignment::finalize() {}
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter &param) {
 switch (param.syscallNumber) {
 case SOCKET:
-	printf("syscall: socket\n");
 	this->syscall_socket(
 	syscallUUID, pid, 
 	std::get<int>(param.params[0]), std::get<int>(param.params[1]), std::get<int>(param.params[2])
@@ -899,7 +813,6 @@ case SOCKET:
 	//TEMP:
 	break;
 case BIND:
-	printf("syscall: bind\n");
 	this->syscall_bind(
 	syscallUUID, pid, std::get<int>(param.params[0]),
 	static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -908,7 +821,6 @@ case BIND:
 	//TEMP:
 	break;
 case LISTEN:
-	printf("syscall: listen\n");
 	this->syscall_listen(
 	syscallUUID, pid, 
 	std::get<int>(param.params[0]),
@@ -917,7 +829,6 @@ case LISTEN:
 	//TEMP:
 	break;
 case ACCEPT:
-	printf("syscall: accept\n");
 	this->syscall_accept(
 	syscallUUID, pid, std::get<int>(param.params[0]),
 	static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -926,7 +837,6 @@ case ACCEPT:
 	//TEMP:
 	break;
 case CONNECT:
-	printf("syscall: connect\n");
 	this->syscall_connect(
 	syscallUUID, pid, std::get<int>(param.params[0]), 
 	static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -935,20 +845,17 @@ case CONNECT:
 	//TEMP:
 	break;
 case READ:
-	printf("syscall: read\n");
 	this->syscall_read(syscallUUID, pid, std::get<int>(param.params[0]),
 					(char*)std::get<void *>(param.params[1]),
 					std::get<int>(param.params[2]));
 	break;
 case WRITE:
-	//TEMP:printf("syscall: write\n");
 	this->syscall_write(syscallUUID, pid, std::get<int>(param.params[0]),
 						(char*)std::get<void *>(param.params[1]),
 						std::get<int>(param.params[2]));
 	break;
 case CLOSE:
 	this->syscall_close(syscallUUID, pid, std::get<int>(param.params[0]));
-	//TEMP:printf("syscall: close\n");
 	break;
 case GETSOCKNAME:
 	this->syscall_getsockname(
@@ -1049,7 +956,6 @@ this->returnSystemCall(syscallUUID, fdToAccept);
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr* addrPtr, socklen_t addrLen) {
 sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
-printf("socket to be connected: %d\n",fd);
 
 this->backlogMap[pid].capacity = 1; // ????????????????
 
@@ -1128,13 +1034,10 @@ if(this->socketMap[pid].find(fd) == this->socketMap[pid].end()){
 }
 
 int returnVal = this->socketMap[pid][fd].rcvBuffer.popData(dst, size);
-	printf("read length: %d\n", returnVal);
 fflush(stdout);
 if(returnVal != 0){
-	//TEMP:printf("read %d bytes\n", returnVal);
 	this->returnSystemCall(syscallUUID, returnVal);
 }else{
-	//TEMP:printf("read hanging\n");
 	timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
 	tp->from = READ;
 	tp->syscallUUID = syscallUUID;
@@ -1417,14 +1320,6 @@ switch(flags) {
 	// 대응되는 socket에 이미 remoteAddr가 적혀있어
 	// 그걸로 찾아 socket을, 그리고 accpet될 수 있도록 q에 넣어줘
 	int pid, fd = -1;
-		// for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
-		// 	for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
-		// 		pid = itPid->first;
-		// 		fd = itFd->first;
-		// 		printf("availabe pid, fd: %d, %d\n", pid, fd);
-		// 	}
-		// }
-
 	for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
 		for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
 		if(itFd->second.state == TCP_ESTABLISHED && //과제 3
@@ -1441,24 +1336,17 @@ switch(flags) {
 			packet.readData(TCP_START+20, rcvBuf, htons(packetLength) - 40);
 
 			if(this->socketMap[pid][fd].rcvWindow == nullptr){
-			//TEMP:printf("window not exist\n");
 			this->socketMap[pid][fd].rcvWindow = 
 				new PacketWindow(&(this->socketMap[pid][fd].rcvBuffer), ntohl(*((unsigned int*)seqBuf)));
 			}
 			
-			std::cout << "received seq: " << ntohl(*((int*)seqBuf)) << std::endl;
-			fflush(stdout);
-			
 			this->socketMap[pid][fd].rcvWindow->ReceivePacket(rcvBuf, (unsigned int)(ntohl(*((int*)seqBuf))), htons(packetLength) - 40);
-			//TEMP:printf("window packet received\n");
 			//TODO: 여기 이 부분, remoteseq가 packetloss 시에 어떻게 고려되어야 할 지 따로 생각해야 함.
 			
-			this->socketMap[pid][fd].rcvBuffer.TestPrint();
 			this->socketMap[pid][fd].remoteseq = (unsigned int)(ntohl(*((int*)seqBuf))) + htons(packetLength) - 40;
 
 			//ack 전송 필요.
 			uint32_t ackResponse = htonl(this->socketMap[pid][fd].rcvWindow->lastSeq);
-			//std::cout << "last seq: " << this->socketMap[pid][fd].rcvWindow->lastSeq << std::endl;
 			newHeadLen = 5 << 4;
 			newFlags = ACK;
 			newWindow = htons(51299);
@@ -1501,7 +1389,6 @@ switch(flags) {
 			itFd->second.remoteAddr.sin_addr.s_addr == ipSrc &&
 			itFd->second.remoteAddr.sin_port == portSrc
 		) {
-			//TEMP:printf("server received ack\n");
 			pid = itPid->first;
 			fd = itFd->first;
 			break;
@@ -1562,11 +1449,9 @@ switch (tp->from) {
 	this->syscall_connect(tp->syscallUUID, tp->pid, tp->fd, tp->connect_addr, tp->connect_addrLen);
 	break;
 	case CLOSE:
-	// //TEMP:printf("timerCallback: CLOSE\n");
 	// this->syscall_close(tp->syscallUUID, tp->pid, tp->fd);
 	break;
 	case READ:
-	//TEMP:printf("timeout: read retry\n");
 	this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_dst, tp->read_size);
 	break;
 	default:

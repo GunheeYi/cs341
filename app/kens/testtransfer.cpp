@@ -25,9 +25,6 @@ extern "C" {
 #include <stdlib.h>
 }
 
-int correct_packet_count = 0;
-int correct_packet_N = 0;
-
 using namespace E;
 
 /**
@@ -162,18 +159,6 @@ protected:
         }
         if (buffer_size - remaining > 0) {
           for (int j = 0; j < buffer_size - remaining; j++) {
-            if(j == 0){
-                correct_packet_count = 0;
-            }
-            if( send_buffer[j] == recv_buffer[j] ){
-                correct_packet_count++;
-            }else{
-                printf("incorrect num: %d\n", j);
-            }
-            if(correct_packet_count == 67){
-                correct_packet_N++;
-                printf("correct packet: %d\n", correct_packet_N);
-            }
             EXPECT_EQ(send_buffer[j], recv_buffer[j]);
           }
         }
@@ -311,18 +296,6 @@ protected:
         }
         if (buffer_size - remaining > 0) {
           for (int j = 0; j < buffer_size - remaining; j++) {
-            if(j == 0){
-                correct_packet_count = 0;
-            }
-            if( send_buffer[j] == recv_buffer[j] ){
-                correct_packet_count++;
-            }else{
-                printf("incorrect num: %d\n", j);
-            }
-            if(correct_packet_count == 67){
-                correct_packet_N++;
-                printf("correct packet: %d\n", correct_packet_N);
-            }
             EXPECT_EQ(send_buffer[j], recv_buffer[j]);
           }
         }
