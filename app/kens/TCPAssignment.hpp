@@ -85,7 +85,7 @@ struct socket {
   uint32_t seq;
   uint32_t ack;
 
-  uint32_t writeSent;
+  uint32_t write_originalLen;
 };
 
 struct backlog { // 용어 개선 가능하다
@@ -143,7 +143,7 @@ protected:
   void syscall_socket(UUID, int, int, int, int);
   void syscall_close(UUID, int, int);
   void syscall_read(UUID, int, int, void*, uint32_t);
-  void syscall_write(UUID, int, int, void*, uint32_t);
+  void syscall_write(UUID, int, int, void*, uint32_t, void*, uint32_t);
   void syscall_connect(UUID, int, int, sockaddr*, socklen_t);
   void syscall_listen(UUID, int, int, int);
   void syscall_accept(UUID, int, int, sockaddr*, socklen_t*);

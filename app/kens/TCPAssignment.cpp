@@ -75,9 +75,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     break;
   case WRITE:
     // printf("SYSCALL: WRITE\n");
-    this->syscall_write(syscallUUID, pid, std::get<int>(param.params[0]),
-                        std::get<void *>(param.params[1]),
-                        std::get<int>(param.params[2]));
+    this->syscall_write(
+      syscallUUID, pid, std::get<int>(param.params[0]),
+      std::get<void *>(param.params[1]), std::get<int>(param.params[2]),
+      std::get<void *>(param.params[1]), std::get<int>(param.params[2])
+    );
     break;
   case CLOSE:
     // printf("SYSCALL: CLOSE\n");
@@ -294,7 +296,7 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start,
   return;
 };
 
-void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, uint32_t len) {
+void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, uint32_t len, void* originalStart, uint32_t originalLen) {
   assert(this->socketMap.find(pid) != this->socketMap.end());
   assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
   socket* s = &this->socketMap[pid][fd];
@@ -315,6 +317,9 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
   uint32_t sent = 0;
   uint32_t remaining = len;
   uint32_t sending, packetSize;
+
+  s->write_syscallUUID = syscallUUID;
+  s->write_originalLen = originalLen;
   
 	while(remaining != 0){
 		sending = remaining > MAX_SEGMENT_SIZE ? MAX_SEGMENT_SIZE : remaining;
@@ -352,23 +357,20 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
     
     this->sendPacket("IPv4", std::move(p));
 
+    timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
+    tp->from = TIMER_FROM_WRITE;
+    tp->syscallUUID = syscallUUID;
+    tp->pid = pid;
+    tp->fd = fd;
+    tp->write_start = start;
+    tp->write_len = len;
+    s->write_timerUUID = this->addTimer(tp, 100000000U);
+    
     s->seq += sending;
     sent += sending;
     remaining -= sending;
 	}
 
-  timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
-  tp->from = TIMER_FROM_WRITE;
-  tp->syscallUUID = syscallUUID;
-  tp->pid = pid;
-  tp->fd = fd;
-  tp->write_start = start;
-  tp->write_len = len;
-  s->write_timerUUID = this->addTimer(tp, 100000000U);
-  s->write_syscallUUID = syscallUUID;
-  s->writeSent = sent;
-
-	// this->returnSystemCall(syscallUUID, sent);
 };
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
@@ -602,7 +604,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         // data 패킷에 대한 ack 응답임
         // printf("PACKET ARRIVED: ACK response to data packet. Returning write system call with return value %u.\n", s->writeSent);
         this->cancelTimer(s->write_timerUUID);
-        this->returnSystemCall(s->write_syscallUUID, s->writeSent);
+        this->returnSystemCall(s->write_syscallUUID, s->write_originalLen);
         return;
 
       } else { // payload를 담고 있는 data 패킷임
