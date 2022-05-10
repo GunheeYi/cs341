@@ -118,7 +118,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   s.readStart = 0;
   s.readEnd = 0;
   s.readBufOffsetSet = false;
-  s.seq = 1;
+  s.seq = rand();
   
   this->socketMap[pid].insert(std::pair<int, socket>(fd, s));
   this->returnSystemCall(syscallUUID, fd);
@@ -180,13 +180,6 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
 
   assert(this->socketMap[pid].find(fdToAccept) != this->socketMap[pid].end());
   socket* s = &this->socketMap[pid][fdToAccept];
-
-  s->readBuf = (char*) malloc(READ_BUFFER_SIZE);
-  s->writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
-  s->readStart = 0;
-  s->readEnd = 0;
-  s->readBufOffsetSet = false;
-  s->seq = 1;
   
   sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
   memcpy(addrPtr_in, &s->remoteAddr, sizeof(sockaddr_in));
@@ -222,7 +215,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   s->remoteAddr.sin_addr.s_addr = addrPtr_in->sin_addr.s_addr;
   s->remoteAddr.sin_port = addrPtr_in->sin_port;
   
-  s->seq = rand();
   uint32_t seqN = htonl(s->seq);
   uint32_t ackN = htonl(0);
   uint8_t headLen = 5 << 4, flags = SYN;
@@ -410,8 +402,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   uint16_t window, checksum, urgent;
   size_t payloadLen;
 
-  int randSeq = rand();
-
   uint32_t newSeq, newAck, newSeqN, newAckN;
   uint8_t newHeadLen, newFlags;
   uint16_t newWindow, newChecksum, newUrgent;
@@ -477,7 +467,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       newSocket->remoteAddr.sin_port = portSrc;
       newSocket->state = TCP_SYN_RCVD;
 
-      newSeq = rand();
+      newSocket->readBuf = (char*) malloc(READ_BUFFER_SIZE);
+      newSocket->writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
+      newSocket->readStart = 0;
+      newSocket->readEnd = 0;
+      newSocket->readBufOffsetSet = false;
+      newSocket->seq = rand();
+
+      newSeq = newSocket->seq;
       newAck = seq + 1;
       newFlags = SYN | ACK;
 
@@ -550,6 +547,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           this->backlogMap[pid].q.push(fd);
 
           s->state = TCP_ESTABLISHED;
+          s->seq += 1;
 
           // simulatneous connect handling
           // TODO: socket에 syscallUUID랑 timerUUID를 저장해놓는게 맞아?
