@@ -371,6 +371,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
     uint64_t after = s->estRTT + 4 * s->devRTT;
     s->write_timerUUIDs.push(std::make_pair(s->seq + len, this->addTimer(tp, after)));
     // printf("Setting write timer for %llu nanoseconds. (estRTT %u, devRTT %u)\n", after, s->estRTT, s->devRTT);
+    s->departures[s->seq + len] = getCurrentTime();
 
     s->seq += sending;
     sent += sending;
@@ -638,6 +639,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
         // data 패킷에 대한 ack 응답임
         // printf("PACKET ARRIVED: ACK response to data packet. Returning write system call with return value %u.\n", s->writeSent);
+        if (s->departures.find(ack) != s->departures.end()) {
+          uint64_t sampleRTT = getCurrentTime() - s->departures[ack];
+          s->estRTT = (1 - ALPHA) * s->estRTT + ALPHA * sampleRTT;
+          s->devRTT = (1 - BETA) * s->devRTT + BETA * (sampleRTT > s->estRTT ? sampleRTT - s->estRTT : s->estRTT - sampleRTT);
+          s->departures.erase(ack);
+        }
+
         while(!s->write_timerUUIDs.empty()) {
           if (s->write_timerUUIDs.front().first > ack) break;
 

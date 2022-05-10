@@ -74,6 +74,7 @@ struct socket {
   bool binded;
   UUID connect_timerUUID;
   UUID handshake_timerUUID;
+  std::map<uint32_t, uint64_t> departures;
   std::queue<std::pair<uint32_t, UUID>> write_timerUUIDs;
   int connect_syscallUUID;
   int write_syscallUUID;
