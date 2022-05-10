@@ -656,9 +656,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         size_t seqRel_ = seqRel % READ_BUFFER_SIZE; // _가 붙은 변수는 mod READ_BUFFER_SIZE 연산이 되었음을 의미
 
         // read buffer overflow
-        if (
-          seqRel < s->readStart ||
-          seqRel + payloadLen > s->readStart + READ_BUFFER_SIZE) {
+        if (seqRel + payloadLen > s->readStart + READ_BUFFER_SIZE) {
           // printf("PACKET ARRIVED: Read buffer overflow. Rejecting incoming packet.\n");
           // TODO: 이전 유효 ack number 다시 보내줘야 하나?
           return;
@@ -706,7 +704,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           itMarker = itMarkerNext;
         }
 
-        newSeq = 1;
+        newSeq = s->seq;
         newAck = s->readEnd + s->readBufOffset;
         newFlags = ACK;
 
