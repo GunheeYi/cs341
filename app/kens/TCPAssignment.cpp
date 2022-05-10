@@ -343,6 +343,8 @@ void WriteToWindow(LinkedDataNode* _window_head, unsigned int _winhead_seq, unsi
 	while (currentNode != nullptr) {
 		
 		printf("mallang2!\n");
+		std::cout << "that if: " << (int)(packet_seq - (_winhead_seq + LinkSize * nodeOffsetCount)) << std::endl;
+		std::cout << "that2: " << (int)((_winhead_seq + LinkSize * (nodeOffsetCount + 1)) - packet_seq) << std::endl;
 		fflush(stdout);
 		if ((int)(packet_seq - (_winhead_seq + LinkSize * nodeOffsetCount)) >= 0
 			&& (int)((_winhead_seq + LinkSize * (nodeOffsetCount + 1)) - packet_seq) > 0) {
@@ -367,6 +369,7 @@ void WriteToWindow(LinkedDataNode* _window_head, unsigned int _winhead_seq, unsi
 				memcpy(currentNode->linkStorage + (packet_seq - (_winhead_seq + LinkSize * nodeOffsetCount) ), 
 					data, packet_length);
 			}
+			
 			return;
 		}
 
@@ -632,14 +635,15 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		bool IsWindowNew = false;
 
 		if ((int)(seq + length - (lastSeq + emptyLength + LinkSize * windowLinkCount)) > 0) {
-			//TEMP:printf("윈도우 링크가 추가됨\n");
 
-			if(window_tail == nullptr){
+			if(window_head == nullptr){
+				printf("윈도우 링크가 추가됨1\n");
 				LinkedDataNode* newNode = new LinkedDataNode();
 				window_head = newNode;
 				window_tail = newNode;
 				IsWindowNew = true;
 			}else{
+				printf("윈도우 링크가 추가됨\n");
 				window_tail->to_tail = new LinkedDataNode(window_tail);
 				window_tail = window_tail->to_tail;
 			}
@@ -665,11 +669,16 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		if(IsWindowNew){ //윈도우가 생성되어 있으나, 그것에 바로 데이터를 쓰는 것이 아니라, targetLink에 걸쳐서 써야 하는 경우.
 			int packet_t_part = lastSeq + emptyLength - seq;
 			printf("packet_t_part: %d", packet_t_part);
+			printf("packet_t_after: %d", length - packet_t_part);
 			if(packet_t_part > 0){
-			memcpy(targetLink->linkStorage + targetLink->usedLength,
-			data, packet_t_part);
+				//여기 수정했다.
+				memcpy(targetLink->linkStorage + LinkSize - packet_t_part,
+					data, packet_t_part);
 			}
-			memcpy(window_head->linkStorage, data, length - packet_t_part);
+			memcpy(window_head->linkStorage, data + packet_t_part, length - packet_t_part);
+			if(length - packet_t_part == 8){
+				std::cout << "that address: " << (uint64_t)(&(window_head->linkStorage[0]))  << "|" << (uint64_t)(window_head) << std::endl;
+			}
 			IsWindowNew = false;
 		}
 		//윈도우 링크가 존재하여, 윈도우 링크에 작성하는 경우.
@@ -677,22 +686,21 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		//TEMP:printf("윈도우 링크에 작성\n");
 			printf("mallang1!\n");
 			fflush(stdout);
-			WriteToWindow(last_window_tail,
-				lastSeq + emptyLength + LinkSize * (windowLinkCount - 1), seq, data, length);
+			WriteToWindow(last_window_tail, lastSeq + emptyLength + LinkSize * (windowLinkCount - 1), seq, data, length);
 			return 0;
 		}
 
 		//TODO!!: 현재 마지막 윈도우의 가장 큰 seq의 직후/ 혹은 거리를 두고 이후에 붙었으나, 그것이 여전히 targetLink 이내인 경우가 처리되지 않았음.
 		int packet_targetLink_part = lastSeq + emptyLength - seq;
 		if (packet_targetLink_part < length) { // window 쪽 링크로 넘치는 경우.
-		//TEMP:printf("window 쪽 link로 넘침\n");
+		printf("window 쪽 link로 넘침\n");
 		memcpy(targetLink->linkStorage + targetLink->usedLength,
 			data, packet_targetLink_part);
 
 		//윈도우 쪽 링크를 만들어야 함.
-		window_head = new LinkedDataNode();
-		window_tail = window_head;
-		memcpy(window_head->linkStorage, data, length - packet_targetLink_part);
+		// window_head = new LinkedDataNode();
+		// window_tail = window_head;
+		// memcpy(window_head->linkStorage, data, length - packet_targetLink_part);
 		}
 		else {
 		//TEMP:printf("targetlink 안에서 끝남.\n");
@@ -834,7 +842,7 @@ int PacketWindow::ReceivePacket(char* data, unsigned int seq, int length) {
 		}
 		else if(prevUB != nullptr) {
 			// 버퍼 뒤에 붙은 것이 아니라, UB 사이에 낀 것. 
-			//WriteToWindow(window_head, lastSeq + emptyLength, seq, data, length);
+			WriteToWindow(window_head, lastSeq + emptyLength, seq, data, length);
 		}
 
 		return 0;
