@@ -254,6 +254,10 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
   tp->from = CONNECT;
   tp->syscallUUID = syscallUUID;
+  tp->pid = pid;
+  tp->fd = fd;
+  tp->connect_addrPtr = addrPtr;
+  tp->connect_addrLen = addrLen;
   s->timerUUID = this->addTimer(tp, 100000000U);
   s->syscallUUID = syscallUUID;
 
@@ -716,7 +720,8 @@ void TCPAssignment::timerCallback(std::any payload) {
       this->syscall_accept(tp->syscallUUID, tp->pid, tp->fd, tp->accept_addrPtr, tp->accept_addrLenPtr);
       break;
     case CONNECT:
-      this->returnSystemCall(tp->syscallUUID, -1);
+      this->syscall_connect(tp->syscallUUID, tp->pid, tp->fd, tp->connect_addrPtr, tp->connect_addrLen);
+      // this->returnSystemCall(tp->syscallUUID, -1);
       break;
     case READ:
       this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_start, tp->read_len);

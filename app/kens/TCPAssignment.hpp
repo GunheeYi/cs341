@@ -82,6 +82,10 @@ struct timerPayload {
   int pid;
   int fd;
 
+  // CONNECT
+  sockaddr* connect_addrPtr;
+  socklen_t connect_addrLen;
+
   // ACCEPT
   sockaddr* accept_addrPtr;
   socklen_t* accept_addrLenPtr;
