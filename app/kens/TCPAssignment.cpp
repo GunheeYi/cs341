@@ -467,10 +467,41 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   switch(flags) {
     case SYN:
     { 
+      printf("Packet arrived with SYN flag.\n");
+
+      int pid = -1, fd = -1;
+
+      bool rcvdFound = false;
+
+      for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
+        for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
+          if (
+            (itFd->second.state == TCP_SYN_RCVD) &&
+            (
+              itFd->second.localAddr.sin_addr.s_addr == INADDR_ANY ||
+              itFd->second.localAddr.sin_addr.s_addr == ipDst 
+            ) &&
+            itFd->second.localAddr.sin_port == portDst
+          ) {
+            pid = itPid->first;
+            fd = itFd->first;
+            printf("Found SYN-RCVD socket.\n");
+            break;
+          }
+        }
+      }
+
+      if (pid != -1 && fd != -1) {
+        newSeq = this->socketMap[pid][fd].seq;
+        newAck = seq + 1;
+        newFlags = SYN | ACK;
+        break;
+      }
+
       // packet에 dstIp, dstPort로 listening socket을 찾아
       // 새로운 socket 생성, 거기에 listening socket의 localAddr를 복사
       // packet의 srcIp, srcPort를 새로운 socket의 remoteAddr로 복사
-      int pid = -1, listeningfd = -1;
+      
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
           if (
@@ -482,7 +513,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
             itFd->second.localAddr.sin_port == portDst
           ) {
             pid = itPid->first;
-            listeningfd = itFd->first;
+            fd = itFd->first;
             break;
           }
         }
@@ -490,7 +521,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       if (
         pid == -1 || 
-        listeningfd == -1 || 
+        fd == -1 || 
         this->backlogMap[pid].current >= this->backlogMap[pid].capacity
       ) return;
 
@@ -498,7 +529,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       int newfd = this->createFileDescriptor(pid);
       newSocket = &this->socketMap[pid][newfd];
-      memcpy(&newSocket->localAddr, &this->socketMap[pid][listeningfd].localAddr, sizeof(sockaddr_in));
+      memcpy(&newSocket->localAddr, &this->socketMap[pid][fd].localAddr, sizeof(sockaddr_in));
       newSocket->localAddr.sin_addr.s_addr = ipDst;
       newSocket->remoteAddr.sin_family = AF_INET;
       newSocket->remoteAddr.sin_addr.s_addr = ipSrc;
@@ -715,14 +746,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   p.writeData(TCP_START + 17, &newChecksum2, 1);
   
   this->sendPacket("IPv4", std::move(p));
-
-  if (flags == SYN) {
-    timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
-    tp->from = TIMER_FROM_HANDSHAKE;
-    tp->handshake_packet = p.clone();
-    tp->handshake_socketPtr = newSocket;
-    newSocket->handshake_timerUUID = this->addTimer(tp, 100000000U);
-  }
 }
 
 void TCPAssignment::timerCallback(std::any payload) {
@@ -745,16 +768,6 @@ void TCPAssignment::timerCallback(std::any payload) {
       // printf("timerCallback: CLOSE\n");
       // this->syscall_close(tp->syscallUUID, tp->pid, tp->fd);
       break;
-    case TIMER_FROM_HANDSHAKE:
-    {
-      this->sendPacket("IPv4", std::move(tp->handshake_packet));
-      timerPayload* tp_ = (timerPayload*) malloc(sizeof(timerPayload));
-      tp_->from = TIMER_FROM_HANDSHAKE;
-      tp_->handshake_packet = tp->handshake_packet.clone();
-      tp_->handshake_socketPtr = tp->handshake_socketPtr;
-      tp_->handshake_socketPtr->handshake_timerUUID = this->addTimer(tp_, 100000000U);
-      break;
-    }
     default:
       break;
   }
