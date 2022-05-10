@@ -71,7 +71,7 @@ struct socket {
   bool binded;
   UUID connect_timerUUID;
   UUID handshake_timerUUID;
-  UUID write_timerUUID;
+  std::queue<std::pair<uint32_t, UUID>> write_timerUUIDs;
   int connect_syscallUUID;
   int write_syscallUUID;
 
@@ -85,7 +85,7 @@ struct socket {
   uint32_t seq;
   uint32_t ack;
 
-  uint32_t writeSent;
+  uint32_t write_totalLen;
 };
 
 struct backlog { // 용어 개선 가능하다
@@ -116,6 +116,8 @@ struct timerPayload {
   // WRITE
   void* write_start;
   uint32_t write_len;
+  uint32_t write_seq;
+  socket* write_s;
 
   // HANDSHAKE
   Packet handshake_packet;
@@ -143,7 +145,7 @@ protected:
   void syscall_socket(UUID, int, int, int, int);
   void syscall_close(UUID, int, int);
   void syscall_read(UUID, int, int, void*, uint32_t);
-  void syscall_write(UUID, int, int, void*, uint32_t);
+  void syscall_write(UUID, int, int, void*, uint32_t, bool, uint32_t);
   void syscall_connect(UUID, int, int, sockaddr*, socklen_t);
   void syscall_listen(UUID, int, int, int);
   void syscall_accept(UUID, int, int, sockaddr*, socklen_t*);
