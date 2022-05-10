@@ -80,7 +80,6 @@ struct socket {
   int write_syscallUUID;
 
   char* readBuf;
-  char* writeBuf;
   uint32_t readStart;
   uint32_t readEnd;
   uint32_t readBufOffset; // (starting sequence number)

@@ -114,7 +114,6 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   s.state = TCP_CLOSED;
   s.binded = false;
   s.readBuf = (char*) malloc(READ_BUFFER_SIZE);
-  s.writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
   s.readStart = 0;
   s.readEnd = 0;
   s.readBufOffsetSet = false;
@@ -384,7 +383,6 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
   
   free(this->socketMap[pid][fd].readBuf);
-  free(this->socketMap[pid][fd].writeBuf);
 
   // this->socketMap[pid][fd].state = TCP_CLOSED;
   this->removeFileDescriptor(pid, fd);
@@ -542,7 +540,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       newSocket->state = TCP_SYN_RCVD;
 
       newSocket->readBuf = (char*) malloc(READ_BUFFER_SIZE);
-      newSocket->writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
       newSocket->readStart = 0;
       newSocket->readEnd = 0;
       newSocket->readBufOffsetSet = false;
