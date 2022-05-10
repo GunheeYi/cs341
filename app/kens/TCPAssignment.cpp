@@ -258,8 +258,8 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   tp->fd = fd;
   tp->connect_addrPtr = addrPtr;
   tp->connect_addrLen = addrLen;
-  s->timerUUID = this->addTimer(tp, 100000000U);
-  s->syscallUUID = syscallUUID;
+  s->connect_timerUUID = this->addTimer(tp, 100000000U);
+  s->connect_syscallUUID = syscallUUID;
 
 };
 
@@ -364,8 +364,8 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
   tp->fd = fd;
   tp->write_start = start;
   tp->write_len = len;
-  s->timerUUID = this->addTimer(tp, 100000000U);
-  s->syscallUUID = syscallUUID;
+  s->write_timerUUID = this->addTimer(tp, 100000000U);
+  s->write_syscallUUID = syscallUUID;
   s->writeSent = sent;
 
 	// this->returnSystemCall(syscallUUID, sent);
@@ -550,8 +550,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       newFlags = ACK;
 
-      this->cancelTimer(s->timerUUID);
-      this->returnSystemCall(s->syscallUUID, 0);
+      this->cancelTimer(s->connect_timerUUID);
+      this->returnSystemCall(s->connect_syscallUUID, 0);
 
       break;
     }
@@ -587,13 +587,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           s->state = TCP_ESTABLISHED;
           s->seq += 1;
 
-          this->cancelTimer(s->handshakeTimerUUID);
+          this->cancelTimer(s->handshake_timerUUID);
 
           // simulatneous connect handling
           // TODO: socket에 syscallUUID랑 timerUUID를 저장해놓는게 맞아?
-          if (s->syscallUUID) {
-            this->cancelTimer(s->timerUUID);
-            this->returnSystemCall(s->syscallUUID, 0);
+          if (s->connect_syscallUUID) {
+            this->cancelTimer(s->connect_timerUUID);
+            this->returnSystemCall(s->connect_syscallUUID, 0);
           }
           
           return;
@@ -601,8 +601,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
         // data 패킷에 대한 ack 응답임
         // printf("PACKET ARRIVED: ACK response to data packet. Returning write system call with return value %u.\n", s->writeSent);
-        this->cancelTimer(s->timerUUID);
-        this->returnSystemCall(s->syscallUUID, s->writeSent);
+        this->cancelTimer(s->write_timerUUID);
+        this->returnSystemCall(s->write_syscallUUID, s->writeSent);
         return;
 
       } else { // payload를 담고 있는 data 패킷임
@@ -721,7 +721,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     tp->from = TIMER_FROM_HANDSHAKE;
     tp->handshake_packet = p.clone();
     tp->handshake_socketPtr = newSocket;
-    newSocket->handshakeTimerUUID = this->addTimer(tp, 100000000U);
+    newSocket->handshake_timerUUID = this->addTimer(tp, 100000000U);
   }
 }
 
@@ -752,7 +752,7 @@ void TCPAssignment::timerCallback(std::any payload) {
       tp_->from = TIMER_FROM_HANDSHAKE;
       tp_->handshake_packet = tp->handshake_packet.clone();
       tp_->handshake_socketPtr = tp->handshake_socketPtr;
-      tp_->handshake_socketPtr->handshakeTimerUUID = this->addTimer(tp_, 100000000U);
+      tp_->handshake_socketPtr->handshake_timerUUID = this->addTimer(tp_, 100000000U);
       break;
     }
     default:

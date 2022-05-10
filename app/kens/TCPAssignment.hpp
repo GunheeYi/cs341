@@ -69,9 +69,11 @@ struct socket {
   sockaddr_in localAddr;
   sockaddr_in remoteAddr;
   bool binded;
-  UUID timerUUID;
-  UUID handshakeTimerUUID;
-  int syscallUUID;
+  UUID connect_timerUUID;
+  UUID handshake_timerUUID;
+  UUID write_timerUUID;
+  int connect_syscallUUID;
+  int write_syscallUUID;
 
   char* readBuf;
   char* writeBuf;
