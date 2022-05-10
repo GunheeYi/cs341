@@ -352,7 +352,19 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
     sent += sending;
     remaining -= sending;
 	}
-	this->returnSystemCall(syscallUUID, sent);
+
+  timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
+  tp->from = WRITE;
+  tp->syscallUUID = syscallUUID;
+  tp->pid = pid;
+  tp->fd = fd;
+  tp->write_start = start;
+  tp->write_len = len;
+  s->timerUUID = this->addTimer(tp, 100000000U);
+  s->syscallUUID = syscallUUID;
+  s->writeSent = sent;
+
+	// this->returnSystemCall(syscallUUID, sent);
 };
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
@@ -462,6 +474,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       int newfd = this->createFileDescriptor(pid);
       socket* newSocket = &this->socketMap[pid][newfd];
       memcpy(&newSocket->localAddr, &this->socketMap[pid][listeningfd].localAddr, sizeof(sockaddr_in));
+      newSocket->localAddr.sin_addr.s_addr = ipDst;
       newSocket->remoteAddr.sin_family = AF_INET;
       newSocket->remoteAddr.sin_addr.s_addr = ipSrc;
       newSocket->remoteAddr.sin_port = portSrc;
@@ -560,7 +573,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         }
 
         // data 패킷에 대한 ack 응답임
-        // printf("PACKET ARRIVED: ACK response to data packet.\n");
+        // printf("PACKET ARRIVED: ACK response to data packet. Returning write system call with return value %u.\n", s->writeSent);
+        this->cancelTimer(s->timerUUID);
+        this->returnSystemCall(s->syscallUUID, s->writeSent);
+        return;
 
       } else { // payload를 담고 있는 data 패킷임
         // printf("PACKET ARRIVED: Data packet with payload.\n");
@@ -685,6 +701,9 @@ void TCPAssignment::timerCallback(std::any payload) {
       break;
     case READ:
       this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_start, tp->read_len);
+      break;
+    case WRITE:
+      this->syscall_write(tp->syscallUUID, tp->pid, tp->fd, tp->write_start, tp->write_len);
       break;
     case CLOSE:
       // printf("timerCallback: CLOSE\n");

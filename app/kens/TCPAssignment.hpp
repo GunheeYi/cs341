@@ -66,6 +66,8 @@ struct socket {
   std::list<readBufMarker> readBufMarkers;
   uint32_t seq;
   uint32_t ack;
+
+  uint32_t writeSent;
 };
 
 struct backlog { // 용어 개선 가능하다
@@ -88,6 +90,10 @@ struct timerPayload {
   // READ
   void* read_start;
   uint32_t read_len;
+
+  // WRITE
+  void* write_start;
+  uint32_t write_len;
   
 };
 
