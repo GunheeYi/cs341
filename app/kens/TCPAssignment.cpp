@@ -305,7 +305,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
   uint16_t portDst = s->remoteAddr.sin_port;
 
   uint32_t newSeqN;
-  uint32_t newAckN = htonl(1);
+  uint32_t newAckN = htonl(s->ack);
   uint8_t newHeadLen = 5 << 4;
   uint8_t newFlags = ACK;
   uint16_t newWindow = htons(51200);
