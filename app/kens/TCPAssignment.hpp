@@ -28,6 +28,9 @@
 #define SYN 0b10
 #define ACK 0b10000
 
+#define ALPHA 0.125
+#define BETA 0.25
+
 namespace E {
 
 enum TCPState {
@@ -85,7 +88,9 @@ struct socket {
   uint32_t seq;
   uint32_t ack;
 
-  uint32_t write_totalLen;
+  uint64_t write_totalLen;
+
+  uint32_t estRTT, devRTT;
 };
 
 struct backlog { // 용어 개선 가능하다

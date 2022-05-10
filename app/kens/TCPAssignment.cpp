@@ -119,6 +119,8 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   s.readEnd = 0;
   s.readBufOffsetSet = false;
   s.seq = rand();
+  s.estRTT = 100000000;
+  s.devRTT = 0;
   
   this->socketMap[pid].insert(std::pair<int, socket>(fd, s));
   this->returnSystemCall(syscallUUID, fd);
@@ -366,7 +368,9 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
     tp->write_len = len;
     tp->write_seq = s->seq;
     tp->write_s = s;
-    s->write_timerUUIDs.push(std::make_pair(s->seq + len, this->addTimer(tp, 100000000U)));
+    uint64_t after = s->estRTT + 4 * s->devRTT;
+    s->write_timerUUIDs.push(std::make_pair(s->seq + len, this->addTimer(tp, after)));
+    // printf("Setting write timer for %llu nanoseconds. (estRTT %u, devRTT %u)\n", after, s->estRTT, s->devRTT);
 
     s->seq += sending;
     sent += sending;
@@ -542,6 +546,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       newSocket->readEnd = 0;
       newSocket->readBufOffsetSet = false;
       newSocket->seq = rand();
+      newSocket->estRTT = 100000000;
+      newSocket->devRTT = 0;
 
       newSeq = newSocket->seq;
       newAck = seq + 1;
