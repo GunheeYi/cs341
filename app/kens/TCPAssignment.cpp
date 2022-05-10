@@ -467,25 +467,20 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   switch(flags) {
     case SYN:
     { 
-      printf("Packet arrived with SYN flag.\n");
-
       int pid = -1, fd = -1;
-
-      bool rcvdFound = false;
 
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
           if (
             (itFd->second.state == TCP_SYN_RCVD) &&
-            (
-              itFd->second.localAddr.sin_addr.s_addr == INADDR_ANY ||
-              itFd->second.localAddr.sin_addr.s_addr == ipDst 
-            ) &&
-            itFd->second.localAddr.sin_port == portDst
+            itFd->second.localAddr.sin_addr.s_addr == ipDst &&
+            itFd->second.localAddr.sin_port == portDst &&
+            itFd->second.remoteAddr.sin_addr.s_addr == ipSrc &&
+            itFd->second.remoteAddr.sin_port == portSrc
           ) {
             pid = itPid->first;
             fd = itFd->first;
-            printf("Found SYN-RCVD socket.\n");
+            // printf("Found SYN-RCVD socket.\n");
             break;
           }
         }
