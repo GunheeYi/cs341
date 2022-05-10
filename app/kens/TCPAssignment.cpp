@@ -406,6 +406,7 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, socka
 void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // printf("PACKET ARRIVED.\n");
 
+  uint16_t tcpSegLen;
   uint32_t ipSrc, ipDst;
   uint16_t portSrc, portDst;
   uint8_t seqBuf[4], ackBuf[4];
@@ -418,6 +419,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   uint8_t newHeadLen, newFlags;
   uint16_t newWindow, newChecksum, newUrgent;
 
+  packet.readData(IP_START+2, &tcpSegLen, 2);
   packet.readData(IP_START+12, &ipSrc, 4);
   packet.readData(IP_START+16, &ipDst, 4);
   packet.readData(TCP_START+0, &portSrc, 2);
@@ -429,6 +431,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   packet.readData(TCP_START+14, &window, 2);
   packet.readData(TCP_START+16, &checksum, 2);
   packet.readData(TCP_START+18, &urgent, 2);
+
+  tcpSegLen = ntohs(tcpSegLen);
+  uint8_t tempbuf[TCP_START + tcpSegLen];
+  packet.readData(0, tempbuf, TCP_START + tcpSegLen);
+  tempbuf[TCP_START + 16] = 0;
+  tempbuf[TCP_START + 17] = 0;
+
+  uint16_t calculatedChecksum;
+  calculatedChecksum = NetworkUtil::tcp_sum(
+    *(uint32_t *)&tempbuf[IP_START+12], *(uint32_t *)&tempbuf[IP_START+16],
+    &tempbuf[TCP_START], tcpSegLen - 20
+  );
+  calculatedChecksum = ~calculatedChecksum;
+  if(calculatedChecksum != ntohs(checksum)){
+    printf("Checksum error. !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    return;
+  }
 
   seq = ntohl( *(uint32_t *)seqBuf );
   ack = ntohl( *(uint32_t *)ackBuf );
