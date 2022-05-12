@@ -29,14 +29,12 @@ void TCPAssignment::finalize() {}
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter &param) {
   switch (param.syscallNumber) {
   case SOCKET:
-    // printf("SYSCALL: SOCKET\n");
     this->syscall_socket(
       syscallUUID, pid, 
       std::get<int>(param.params[0]), std::get<int>(param.params[1]), std::get<int>(param.params[2])
     );
     break;
   case BIND:
-    // printf("SYSCALL: BIND\n");
     this->syscall_bind(
       syscallUUID, pid, std::get<int>(param.params[0]),
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -44,7 +42,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case LISTEN:
-    // printf("SYSCALL: LISTEN\n");
     this->syscall_listen(
       syscallUUID, pid, 
       std::get<int>(param.params[0]),
@@ -52,7 +49,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case ACCEPT:
-    // printf("SYSCALL: ACCEPT\n");
     this->syscall_accept(
       syscallUUID, pid, std::get<int>(param.params[0]),
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -60,7 +56,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case CONNECT:
-    // printf("SYSCALL: CONNECT\n");
     this->syscall_connect(
       syscallUUID, pid, std::get<int>(param.params[0]), 
       static_cast<struct sockaddr *>(std::get<void *>(param.params[1])),
@@ -68,20 +63,26 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     );
     break;
   case READ:
-    // printf("SYSCALL: READ\n");
-    this->syscall_read(syscallUUID, pid, std::get<int>(param.params[0]),
-                       std::get<void *>(param.params[1]),
-                       std::get<int>(param.params[2]));
+    this->syscall_read(
+      syscallUUID, pid,
+      std::get<int>(param.params[0]), 
+      std::get<void *>(param.params[1]), 
+      std::get<int>(param.params[2])
+    );
     break;
   case WRITE:
-    // printf("SYSCALL: WRITE\n");
-    this->syscall_write(syscallUUID, pid, std::get<int>(param.params[0]),
-                        std::get<void *>(param.params[1]),
-                        std::get<int>(param.params[2]), true, 0);
+    this->syscall_write(
+      syscallUUID, pid, 
+      std::get<int>(param.params[0]), 
+      std::get<void *>(param.params[1]), 
+      std::get<int>(param.params[2]),
+      true, 0
+    );
     break;
   case CLOSE:
-    // printf("SYSCALL: CLOSE\n");
-    this->syscall_close(syscallUUID, pid, std::get<int>(param.params[0]));
+    this->syscall_close(
+      syscallUUID, pid, std::get<int>(param.params[0])
+    );
     break;
   case GETSOCKNAME:
     this->syscall_getsockname(
@@ -130,7 +131,6 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int fd, sockaddr* ad
     this->returnSystemCall(syscallUUID, -1);
     return;
   }
-  // 다른 pid의 socket에다 bind하려는 경우 허용해야하나?
   sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
   for (std::map<int, socket>::iterator it = this->socketMap[pid].begin(); it != this->socketMap[pid].end(); it++) {
     if (
@@ -179,7 +179,6 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
   int fdToAccept = this->backlogMap[pid].q.front();
   this->backlogMap[pid].q.pop();
 
-  assert(this->socketMap[pid].find(fdToAccept) != this->socketMap[pid].end());
   socket* s = &this->socketMap[pid][fdToAccept];
   
   sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
@@ -192,7 +191,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int fd, sockaddr* 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr* addrPtr, socklen_t addrLen) {
   sockaddr_in* addrPtr_in = (sockaddr_in*) addrPtr;
 
-  this->backlogMap[pid].capacity = 1; // ????????????????
+  this->backlogMap[pid].capacity = 1; // handling simulaneous connect
 
   std::array<uint8_t, 4> arr;
   for (int i = 0; i < 4; i++) arr[i] = addrPtr_in->sin_addr.s_addr >> (i * 8) & 0xFF;
@@ -201,8 +200,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   std::optional<ipv4_t> ipSrc = this->getIPAddr(portSrc);
 
   // TODO: 이미 bind된 소켓 중에 ip/port 겹치는 것 있는지 확인 필요?
-  assert(this->socketMap.find(pid) != this->socketMap.end());
-  assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
 
   socket* s = &this->socketMap[pid][fd];
   if (!s->binded) {
@@ -236,12 +233,10 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   p.writeData(TCP_START+18, &urgent, 2);
 
   uint8_t buf[TCP_START + TCP_HEADER_SIZE];
-  p.readData(0, buf, 54);
-  assert(buf[TCP_START + 16] == 0);
-  assert(buf[TCP_START + 17] == 0);
+  p.readData(0, buf, TCP_START + TCP_HEADER_SIZE);
   newChecksum = NetworkUtil::tcp_sum(
     *(uint32_t *)&buf[IP_START+12], *(uint32_t *)&buf[IP_START+16],
-    &buf[TCP_START], 20
+    &buf[TCP_START], TCP_HEADER_SIZE
   );
   newChecksum = ~newChecksum;
   uint8_t newChecksum1 = (newChecksum & 0xff00) >> 8;
@@ -261,13 +256,9 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int fd, sockaddr*
   tp->connect_addrLen = addrLen;
   s->connect_timerUUID = this->addTimer(tp, 100000000U);
   s->connect_syscallUUID = syscallUUID;
-
 };
 
 void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start, uint32_t len) {
-  assert(this->socketMap.find(pid) != this->socketMap.end());
-  assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
-
   socket* s = &this->socketMap[pid][fd];
 
   if (s->state != TCP_ESTABLISHED) this->returnSystemCall(syscallUUID, -1);
@@ -291,13 +282,9 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start,
   s->readStart += readLen;
 
   this->returnSystemCall(syscallUUID, readLen);
-
-  return;
 };
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, uint32_t len, bool initial, uint32_t seq) {
-  assert(this->socketMap.find(pid) != this->socketMap.end());
-  assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
   socket* s = &this->socketMap[pid][fd];
 
   if (initial) {
@@ -344,8 +331,6 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
 
 		uint8_t buf[packetSize];
     p.readData(0, buf, packetSize);
-    assert(buf[TCP_START + 16] == 0);
-    assert(buf[TCP_START + 17] == 0);
     newChecksum = NetworkUtil::tcp_sum(
       *(uint32_t *)&buf[IP_START+12], *(uint32_t *)&buf[IP_START+16],
       &buf[TCP_START], TCP_HEADER_SIZE + sending
@@ -369,15 +354,12 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
     tp->write_s = s;
     uint64_t after = s->estRTT + 4 * s->devRTT;
     s->write_timerUUIDs.push(std::make_pair(s->seq + len, this->addTimer(tp, after)));
-    // printf("Setting write timer for %llu nanoseconds. (estRTT %u, devRTT %u)\n", after, s->estRTT, s->devRTT);
     s->departures[s->seq + len] = getCurrentTime();
 
     s->seq += sending;
     sent += sending;
     remaining -= sending;
 	}
-
-	// this->returnSystemCall(syscallUUID, sent);
 };
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
@@ -418,7 +400,7 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int fd, socka
 void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   // printf("PACKET ARRIVED.\n");
 
-  socket* newSocket; // Used exclusively for SYN flagged packets.
+  socket* ns; // Used exclusively for SYN flagged packets.
 
   uint16_t tcpSegLen;
   uint32_t ipSrc, ipDst;
@@ -488,7 +470,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           ) {
             pid = itPid->first;
             fd = itFd->first;
-            // printf("Found SYN-RCVD socket.\n");
             break;
           }
         }
@@ -500,10 +481,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         newFlags = SYN | ACK;
         break;
       }
-
-      // packet에 dstIp, dstPort로 listening socket을 찾아
-      // 새로운 socket 생성, 거기에 listening socket의 localAddr를 복사
-      // packet의 srcIp, srcPort를 새로운 socket의 remoteAddr로 복사
       
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
@@ -531,23 +508,22 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       this->backlogMap[pid].current++;
 
       int newfd = this->createFileDescriptor(pid);
-      newSocket = &this->socketMap[pid][newfd];
-      memcpy(&newSocket->localAddr, &this->socketMap[pid][fd].localAddr, sizeof(sockaddr_in));
-      newSocket->localAddr.sin_addr.s_addr = ipDst;
-      newSocket->remoteAddr.sin_family = AF_INET;
-      newSocket->remoteAddr.sin_addr.s_addr = ipSrc;
-      newSocket->remoteAddr.sin_port = portSrc;
-      newSocket->state = TCP_SYN_RCVD;
+      ns = &this->socketMap[pid][newfd];
+      memcpy(&ns->localAddr, &this->socketMap[pid][fd].localAddr, sizeof(sockaddr_in));
+      ns->localAddr.sin_addr.s_addr = ipDst;
+      ns->remoteAddr.sin_family = AF_INET;
+      ns->remoteAddr.sin_addr.s_addr = ipSrc;
+      ns->remoteAddr.sin_port = portSrc;
+      ns->state = TCP_SYN_RCVD;
+      ns->readBuf = (char*) malloc(READ_BUFFER_SIZE);
+      ns->readStart = 0;
+      ns->readEnd = 0;
+      ns->readBufOffsetSet = false;
+      ns->seq = rand();
+      ns->estRTT = 100000000;
+      ns->devRTT = 0;
 
-      newSocket->readBuf = (char*) malloc(READ_BUFFER_SIZE);
-      newSocket->readStart = 0;
-      newSocket->readEnd = 0;
-      newSocket->readBufOffsetSet = false;
-      newSocket->seq = rand();
-      newSocket->estRTT = 100000000;
-      newSocket->devRTT = 0;
-
-      newSeq = newSocket->seq;
+      newSeq = ns->seq;
       newAck = seq + 1;
       newFlags = SYN | ACK;
 
@@ -555,9 +531,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     }
     case (SYN | ACK):
     {
-      // 대응되는 socket에 이미 remoteAddr가 적혀있어
-      // 그걸로 찾아 socket을
-      // 상태 established로 바꿔주고, ack 패킷 보내줘
       int pid, fd = -1;
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
@@ -592,13 +565,11 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
     }
     case ACK:
     {
-      // 대응되는 socket에 이미 remoteAddr가 적혀있어
-      // 그걸로 찾아 socket을
+      // Socket already has its remoteAddr set. Find appropriate the socket by comparing it.
       int pid, fd = -1;
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
           if (
-            // itFd->second.state == TCP_LISTEN && 
             itFd->second.remoteAddr.sin_addr.s_addr == ipSrc &&
             itFd->second.remoteAddr.sin_port == portSrc
           ) {
@@ -613,20 +584,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       socket* s = &this->socketMap[pid][fd];
 
       if (payloadLen == 0) {
-        if (s->state != TCP_ESTABLISHED) { // handshaking 패킷임
-          // printf("PACKET ARRIVED: ACK packet for last handshaking step.\n");
-          // accpet될 수 있도록 q에 넣어줘
+        if (s->state != TCP_ESTABLISHED) { // handshaking packet
           this->backlogMap[pid].current--;
-          this->backlogMap[pid].q.push(fd);
+          this->backlogMap[pid].q.push(fd); // put it into queue so that it can be accepted
 
           s->state = TCP_ESTABLISHED;
           s->seq += 1;
 
           this->cancelTimer(s->handshake_timerUUID);
 
-          // simulatneous connect handling
-          // TODO: socket에 syscallUUID랑 timerUUID를 저장해놓는게 맞아?
-          if (s->connect_syscallUUID) {
+          if (s->connect_syscallUUID) { // simulatneous connect handling
             this->cancelTimer(s->connect_timerUUID);
             this->returnSystemCall(s->connect_syscallUUID, 0);
           }
@@ -634,8 +601,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           return;
         }
 
-        // data 패킷에 대한 ack 응답임
-        // printf("PACKET ARRIVED: ACK response to data packet. Returning write system call with return value %u.\n", s->writeSent);
+        // response to data packet
         if (s->departures.find(ack) != s->departures.end()) {
           uint64_t sampleRTT = getCurrentTime() - s->departures[ack];
           s->estRTT = (1 - ALPHA) * s->estRTT + ALPHA * sampleRTT;
@@ -654,9 +620,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         
         return;
 
-      } else { // payload를 담고 있는 data 패킷임
-        // printf("PACKET ARRIVED: Data packet with payload.\n");
-        assert(s->state == TCP_ESTABLISHED);
+      } else { // data packet with payload
         if (!s->readBufOffsetSet) {
           s->readBufOffset = seq;
           s->readBufOffsetSet = true;
@@ -664,18 +628,17 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
         // relative sequence number
         size_t seqRel = seq - s->readBufOffset;
-        size_t seqRel_ = seqRel % READ_BUFFER_SIZE; // _가 붙은 변수는 mod READ_BUFFER_SIZE 연산이 되었음을 의미
+        size_t seqRel_ = seqRel % READ_BUFFER_SIZE;
 
         // read buffer overflow
         if (seqRel + payloadLen > s->readStart + READ_BUFFER_SIZE) {
-          // printf("PACKET ARRIVED: Read buffer overflow. Rejecting incoming packet.\n");
-          // TODO: 이전 유효 ack number 다시 보내줘야 하나?
+          // TODO: send last valid ack number?
           return;
         }
 
         size_t PAYLOAD_START = TCP_START + headLen;
 
-        // payload를 read buffer에 쓰기
+        // write payload to read buffer
         if (seqRel_ + payloadLen > READ_BUFFER_SIZE) { // write should be wrapped
           size_t len1 = READ_BUFFER_SIZE - seqRel_;
           size_t len2 = payloadLen - len1;
@@ -689,10 +652,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         marker.start = seqRel;
         marker.end = seqRel + payloadLen;
 
-        // 일단 벡터에 새 마커를 순서 맞게 넣어
-        // 그리고 readEnd 확장할 수 있는데까지 확장하고 처리된 마커들 vector에서 pop해
-
-        // 일단 벡터에 새 마커를 순서 맞게 넣어
+        // just put the new parker into the vector in order
         std::list<readBufMarker>::iterator itMarker;
         for (itMarker = s->readBufMarkers.begin(); itMarker != s->readBufMarkers.end(); itMarker++) {
           if (
@@ -705,7 +665,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         }
         s->readBufMarkers.insert(std::next(itMarker), marker);
 
-        // 그리고 readEnd 확장할 수 있는데까지 확장하고 처리된 마커들 vector에서 pop해
+        // and expand readEnd as much as possible, poping markers from the vector
         for (itMarker = s->readBufMarkers.begin(); itMarker != s->readBufMarkers.end(); ) {
           std::list<readBufMarker>::iterator itMarkerNext = std::next(itMarker);
           if (itMarker->start <= s->readEnd) {
@@ -722,10 +682,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         break;
       }
     }
-    default:
-    {
-      return;
-    }
+    default: return;
   }
 
   newHeadLen = 5 << 4;
@@ -748,9 +705,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   p.writeData(TCP_START+18, &newUrgent, 2);
   
   uint8_t buf[TCP_START + TCP_HEADER_SIZE];
-  p.readData(0, buf, 54);
-  assert(buf[TCP_START + 16] == 0);
-  assert(buf[TCP_START + 17] == 0);
+  p.readData(0, buf, TCP_START + TCP_HEADER_SIZE);
   newChecksum = NetworkUtil::tcp_sum(
     *(uint32_t *)&buf[IP_START+12], *(uint32_t *)&buf[IP_START+16],
     &buf[TCP_START], TCP_HEADER_SIZE
@@ -772,19 +727,14 @@ void TCPAssignment::timerCallback(std::any payload) {
       break;
     case TIMER_FROM_CONNECT:
       this->syscall_connect(tp->syscallUUID, tp->pid, tp->fd, tp->connect_addrPtr, tp->connect_addrLen);
-      // this->returnSystemCall(tp->syscallUUID, -1);
       break;
     case TIMER_FROM_READ:
       this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_start, tp->read_len);
       break;
     case TIMER_FROM_WRITE:
-      // TODO: q 비우기
+      // TODO: clear departures map
       while(!tp->write_s->write_timerUUIDs.empty()) tp->write_s->write_timerUUIDs.pop();
       this->syscall_write(tp->syscallUUID, tp->pid, tp->fd, tp->write_start, tp->write_len, false, tp->write_seq);
-      break;
-    case TIMER_FROM_CLOSE:
-      // printf("timerCallback: CLOSE\n");
-      // this->syscall_close(tp->syscallUUID, tp->pid, tp->fd);
       break;
     default:
       break;
