@@ -75,11 +75,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     break;
   case WRITE:
     // printf("SYSCALL: WRITE\n");
-    this->syscall_write(
-      syscallUUID, pid, std::get<int>(param.params[0]),
-      std::get<void *>(param.params[1]), std::get<int>(param.params[2]),
-      std::get<void *>(param.params[1]), std::get<int>(param.params[2])
-    );
+    this->syscall_write(syscallUUID, pid, std::get<int>(param.params[0]),
+                        std::get<void *>(param.params[1]),
+                        std::get<int>(param.params[2]), true, 0);
     break;
   case CLOSE:
     // printf("SYSCALL: CLOSE\n");
@@ -116,11 +114,12 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
   s.state = TCP_CLOSED;
   s.binded = false;
   s.readBuf = (char*) malloc(READ_BUFFER_SIZE);
-  s.writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
   s.readStart = 0;
   s.readEnd = 0;
   s.readBufOffsetSet = false;
   s.seq = rand();
+  s.estRTT = 100000000;
+  s.devRTT = 0;
   
   this->socketMap[pid].insert(std::pair<int, socket>(fd, s));
   this->returnSystemCall(syscallUUID, fd);
@@ -296,10 +295,15 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void* start,
   return;
 };
 
-void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, uint32_t len, void* originalStart, uint32_t originalLen) {
+void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start, uint32_t len, bool initial, uint32_t seq) {
   assert(this->socketMap.find(pid) != this->socketMap.end());
   assert(this->socketMap[pid].find(fd) != this->socketMap[pid].end());
   socket* s = &this->socketMap[pid][fd];
+
+  if (initial) {
+    s->write_syscallUUID = syscallUUID;
+    s->write_totalLen = len;
+  } else s->seq = seq;
 
   uint32_t ipSrc = s->localAddr.sin_addr.s_addr;
   uint32_t ipDst = s->remoteAddr.sin_addr.s_addr;
@@ -317,9 +321,6 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
   uint32_t sent = 0;
   uint32_t remaining = len;
   uint32_t sending, packetSize;
-
-  s->write_syscallUUID = syscallUUID;
-  s->write_originalLen = originalLen;
   
 	while(remaining != 0){
 		sending = remaining > MAX_SEGMENT_SIZE ? MAX_SEGMENT_SIZE : remaining;
@@ -364,19 +365,24 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void* start
     tp->fd = fd;
     tp->write_start = start;
     tp->write_len = len;
-    s->write_timerUUID = this->addTimer(tp, 100000000U);
-    
+    tp->write_seq = s->seq;
+    tp->write_s = s;
+    uint64_t after = s->estRTT + 4 * s->devRTT;
+    s->write_timerUUIDs.push(std::make_pair(s->seq + len, this->addTimer(tp, after)));
+    // printf("Setting write timer for %llu nanoseconds. (estRTT %u, devRTT %u)\n", after, s->estRTT, s->devRTT);
+    s->departures[s->seq + len] = getCurrentTime();
+
     s->seq += sending;
     sent += sending;
     remaining -= sending;
 	}
 
+	// this->returnSystemCall(syscallUUID, sent);
 };
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd) {
   
   free(this->socketMap[pid][fd].readBuf);
-  free(this->socketMap[pid][fd].writeBuf);
 
   // this->socketMap[pid][fd].state = TCP_CLOSED;
   this->removeFileDescriptor(pid, fd);
@@ -469,10 +475,36 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   switch(flags) {
     case SYN:
     { 
+      int pid = -1, fd = -1;
+
+      for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
+        for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
+          if (
+            (itFd->second.state == TCP_SYN_RCVD) &&
+            itFd->second.localAddr.sin_addr.s_addr == ipDst &&
+            itFd->second.localAddr.sin_port == portDst &&
+            itFd->second.remoteAddr.sin_addr.s_addr == ipSrc &&
+            itFd->second.remoteAddr.sin_port == portSrc
+          ) {
+            pid = itPid->first;
+            fd = itFd->first;
+            // printf("Found SYN-RCVD socket.\n");
+            break;
+          }
+        }
+      }
+
+      if (pid != -1 && fd != -1) {
+        newSeq = this->socketMap[pid][fd].seq;
+        newAck = seq + 1;
+        newFlags = SYN | ACK;
+        break;
+      }
+
       // packet에 dstIp, dstPort로 listening socket을 찾아
       // 새로운 socket 생성, 거기에 listening socket의 localAddr를 복사
       // packet의 srcIp, srcPort를 새로운 socket의 remoteAddr로 복사
-      int pid = -1, listeningfd = -1;
+      
       for (std::map<int, std::map<int, socket>>::iterator itPid = this->socketMap.begin(); itPid != this->socketMap.end(); itPid++) {
         for (std::map<int, socket>::iterator itFd = itPid->second.begin(); itFd != itPid->second.end(); itFd++) {
           if (
@@ -484,7 +516,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
             itFd->second.localAddr.sin_port == portDst
           ) {
             pid = itPid->first;
-            listeningfd = itFd->first;
+            fd = itFd->first;
             break;
           }
         }
@@ -492,7 +524,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       if (
         pid == -1 || 
-        listeningfd == -1 || 
+        fd == -1 || 
         this->backlogMap[pid].current >= this->backlogMap[pid].capacity
       ) return;
 
@@ -500,7 +532,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
       int newfd = this->createFileDescriptor(pid);
       newSocket = &this->socketMap[pid][newfd];
-      memcpy(&newSocket->localAddr, &this->socketMap[pid][listeningfd].localAddr, sizeof(sockaddr_in));
+      memcpy(&newSocket->localAddr, &this->socketMap[pid][fd].localAddr, sizeof(sockaddr_in));
       newSocket->localAddr.sin_addr.s_addr = ipDst;
       newSocket->remoteAddr.sin_family = AF_INET;
       newSocket->remoteAddr.sin_addr.s_addr = ipSrc;
@@ -508,11 +540,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
       newSocket->state = TCP_SYN_RCVD;
 
       newSocket->readBuf = (char*) malloc(READ_BUFFER_SIZE);
-      newSocket->writeBuf = (char*) malloc(WRITE_BUFFER_SIZE);
       newSocket->readStart = 0;
       newSocket->readEnd = 0;
       newSocket->readBufOffsetSet = false;
       newSocket->seq = rand();
+      newSocket->estRTT = 100000000;
+      newSocket->devRTT = 0;
 
       newSeq = newSocket->seq;
       newAck = seq + 1;
@@ -603,8 +636,22 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
 
         // data 패킷에 대한 ack 응답임
         // printf("PACKET ARRIVED: ACK response to data packet. Returning write system call with return value %u.\n", s->writeSent);
-        this->cancelTimer(s->write_timerUUID);
-        this->returnSystemCall(s->write_syscallUUID, s->write_originalLen);
+        if (s->departures.find(ack) != s->departures.end()) {
+          uint64_t sampleRTT = getCurrentTime() - s->departures[ack];
+          s->estRTT = (1 - ALPHA) * s->estRTT + ALPHA * sampleRTT;
+          s->devRTT = (1 - BETA) * s->devRTT + BETA * (sampleRTT > s->estRTT ? sampleRTT - s->estRTT : s->estRTT - sampleRTT);
+          s->departures.erase(ack);
+        }
+
+        while(!s->write_timerUUIDs.empty()) {
+          if (s->write_timerUUIDs.front().first > ack) break;
+
+          this->cancelTimer(s->write_timerUUIDs.front().second);
+          s->write_timerUUIDs.pop();
+        }
+
+        if (s->write_timerUUIDs.empty()) this->returnSystemCall(s->write_syscallUUID, s->write_totalLen);
+        
         return;
 
       } else { // payload를 담고 있는 data 패킷임
@@ -620,9 +667,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
         size_t seqRel_ = seqRel % READ_BUFFER_SIZE; // _가 붙은 변수는 mod READ_BUFFER_SIZE 연산이 되었음을 의미
 
         // read buffer overflow
-        if (
-          seqRel < s->readStart ||
-          seqRel + payloadLen > s->readStart + READ_BUFFER_SIZE) {
+        if (seqRel + payloadLen > s->readStart + READ_BUFFER_SIZE) {
           // printf("PACKET ARRIVED: Read buffer overflow. Rejecting incoming packet.\n");
           // TODO: 이전 유효 ack number 다시 보내줘야 하나?
           return;
@@ -670,7 +715,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
           itMarker = itMarkerNext;
         }
 
-        newSeq = 1;
+        newSeq = s->seq;
         newAck = s->readEnd + s->readBufOffset;
         newFlags = ACK;
 
@@ -717,14 +762,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet &&packet) {
   p.writeData(TCP_START + 17, &newChecksum2, 1);
   
   this->sendPacket("IPv4", std::move(p));
-
-  if (flags == SYN) {
-    timerPayload* tp = (timerPayload*) malloc(sizeof(timerPayload));
-    tp->from = TIMER_FROM_HANDSHAKE;
-    tp->handshake_packet = p.clone();
-    tp->handshake_socketPtr = newSocket;
-    newSocket->handshake_timerUUID = this->addTimer(tp, 100000000U);
-  }
 }
 
 void TCPAssignment::timerCallback(std::any payload) {
@@ -741,22 +778,14 @@ void TCPAssignment::timerCallback(std::any payload) {
       this->syscall_read(tp->syscallUUID, tp->pid, tp->fd, tp->read_start, tp->read_len);
       break;
     case TIMER_FROM_WRITE:
-      this->syscall_write(tp->syscallUUID, tp->pid, tp->fd, tp->write_start, tp->write_len);
+      // TODO: q 비우기
+      while(!tp->write_s->write_timerUUIDs.empty()) tp->write_s->write_timerUUIDs.pop();
+      this->syscall_write(tp->syscallUUID, tp->pid, tp->fd, tp->write_start, tp->write_len, false, tp->write_seq);
       break;
     case TIMER_FROM_CLOSE:
       // printf("timerCallback: CLOSE\n");
       // this->syscall_close(tp->syscallUUID, tp->pid, tp->fd);
       break;
-    case TIMER_FROM_HANDSHAKE:
-    {
-      this->sendPacket("IPv4", std::move(tp->handshake_packet));
-      timerPayload* tp_ = (timerPayload*) malloc(sizeof(timerPayload));
-      tp_->from = TIMER_FROM_HANDSHAKE;
-      tp_->handshake_packet = tp->handshake_packet.clone();
-      tp_->handshake_socketPtr = tp->handshake_socketPtr;
-      tp_->handshake_socketPtr->handshake_timerUUID = this->addTimer(tp_, 100000000U);
-      break;
-    }
     default:
       break;
   }

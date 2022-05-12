@@ -28,6 +28,9 @@
 #define SYN 0b10
 #define ACK 0b10000
 
+#define ALPHA 0.125
+#define BETA 0.25
+
 namespace E {
 
 enum TCPState {
@@ -71,12 +74,12 @@ struct socket {
   bool binded;
   UUID connect_timerUUID;
   UUID handshake_timerUUID;
-  UUID write_timerUUID;
+  std::map<uint32_t, uint64_t> departures;
+  std::queue<std::pair<uint32_t, UUID>> write_timerUUIDs;
   int connect_syscallUUID;
   int write_syscallUUID;
 
   char* readBuf;
-  char* writeBuf;
   uint32_t readStart;
   uint32_t readEnd;
   uint32_t readBufOffset; // (starting sequence number)
@@ -85,7 +88,9 @@ struct socket {
   uint32_t seq;
   uint32_t ack;
 
-  uint32_t write_originalLen;
+  uint64_t write_totalLen;
+
+  uint32_t estRTT, devRTT;
 };
 
 struct backlog { // 용어 개선 가능하다
@@ -116,6 +121,8 @@ struct timerPayload {
   // WRITE
   void* write_start;
   uint32_t write_len;
+  uint32_t write_seq;
+  socket* write_s;
 
   // HANDSHAKE
   Packet handshake_packet;
@@ -143,7 +150,7 @@ protected:
   void syscall_socket(UUID, int, int, int, int);
   void syscall_close(UUID, int, int);
   void syscall_read(UUID, int, int, void*, uint32_t);
-  void syscall_write(UUID, int, int, void*, uint32_t, void*, uint32_t);
+  void syscall_write(UUID, int, int, void*, uint32_t, bool, uint32_t);
   void syscall_connect(UUID, int, int, sockaddr*, socklen_t);
   void syscall_listen(UUID, int, int, int);
   void syscall_accept(UUID, int, int, sockaddr*, socklen_t*);
