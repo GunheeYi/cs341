@@ -11,6 +11,14 @@
 #include <E/Networking/E_TimerModule.hpp>
 #include <E/Networking/E_Wire.hpp>
 
+#define IN_PACKET_ENTRY_SIZE 20
+#define IP_START 14
+#define UDP_START 34
+#define RIP_START 42
+#define UNREACHABLE_COST 300
+
+#define debug(a) std::cout << #a ": " << (unsigned int)a << std::endl;
+
 namespace E {
 
 constexpr Size MaxCost = 20;
@@ -60,12 +68,25 @@ __attribute__((packed));
 ;
 #endif
 
+class RoutingTable{
+private:
+  std::map<unsigned int, int> table;
+public:
+  void updateEntry(unsigned int ip, int metric);
+  int getMetric(unsigned int ip);
+  int size();//returns the number of entries in this routing table.
+  int writeToPacket(char* dst, size_t entryCount);
+};
+
 class RoutingAssignment : public HostModule,
                           private RoutingInfoInterface,
                           public TimerModule {
 private:
   virtual void timerCallback(std::any payload) final;
 
+  //과제4
+
+  RoutingTable routingTable;
 public:
   RoutingAssignment(Host &host);
 
